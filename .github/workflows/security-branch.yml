@@ -18,5 +18,5 @@ jobs:
         with:
           node-version: '24.20.0'
       - run: npm install
-      - run: npx vitest run __tests__/security-headers.test.ts
+      - run: npx vitest run __tests__/security-*.test.ts __tests__/auth-security.test.ts
       - run: npm run build
