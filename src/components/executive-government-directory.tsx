@@ -1,5 +1,4 @@
-const VICE_PRESIDENTIAL_STANDARD = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=1600,height=1600,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/ZBtCmnEdqzMWuhPHd0ytI.jpeg'
-
+import { VicePresidentSeal, VicePresidentialFlag } from './vice-president-seal'
 type Props = {
   offices?: any[]
   departments?: any[]
@@ -9,13 +8,14 @@ function OfficeCard({ office }: { office: any }) {
   const vp = office?.kind === 'vice_president'
   return <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
     <div className="flex items-start gap-5">
-      {vp ? <div className="h-28 w-36 overflow-hidden rounded-xl border bg-slate-100"><img src={VICE_PRESIDENTIAL_STANDARD} alt="Vice Presidential Standard" className="h-full w-full object-cover object-center" /></div> : null}
+      {vp ? <div className="h-32 w-32 shrink-0 overflow-hidden rounded-full border border-amber-300 bg-white shadow-sm"><VicePresidentSeal className="h-full w-full" /></div> : null}
       <div className="min-w-0 flex-1">
         <p className="text-xs font-semibold uppercase tracking-[.2em] text-amber-700">{vp ? 'Vice Presidency' : 'Office of the Prime Minister'}</p>
         <h3 className="mt-2 font-serif text-2xl text-slate-950">{office?.name || (vp ? 'Office of the Vice President' : 'Office of the Prime Minister')}</h3>
         {office?.leaderName ? <p className="mt-2 text-sm font-medium text-slate-700">{office.leaderName}{office.leaderTitle ? ` · ${office.leaderTitle}` : ''}</p> : null}
       </div>
     </div>
+    {vp ? <div className="mt-5"><VicePresidentialFlag /></div> : null}
     {office?.mandate ? <p className="mt-5 text-sm leading-6 text-slate-600">{office.mandate}</p> : <p className="mt-5 text-sm text-slate-500">Official responsibilities and leadership details will appear here after authorized publication.</p>}
     {office?.functions ? <p className="mt-3 text-sm leading-6 text-slate-600">{office.functions}</p> : null}
     {(office?.website || office?.email || office?.phone) ? <div className="mt-5 flex flex-wrap gap-3 text-sm">{office.website ? <a className="underline" href={office.website}>Official website</a> : null}{office.email ? <a className="underline" href={`mailto:${office.email}`}>Email office</a> : null}{office.phone ? <span>{office.phone}</span> : null}</div> : null}
