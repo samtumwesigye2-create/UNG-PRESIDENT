@@ -3,11 +3,13 @@ import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { FormEvent, useState } from 'react'
 import { ExecutiveGovernmentDirectory } from '../components/executive-government-directory'
+import { PresidentialRecordsLibrary } from '../components/presidential-records-library'
+import { PublicServiceUX } from '../components/public-service-ux'
 
 export const Route = createFileRoute('/')({ component: PresidentHome })
 
-const PRESIDENTIAL_STANDARD = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/h_Il2OuQtYfn0pk_AjEhC.jpeg'
-const PRESIDENTIAL_SEAL = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/nO8TOweGAmSWEz5Jojfg0.jpeg'
+const PRESIDENTIAL_STANDARD = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cMhdH8PnCuRMUuhn-17ua.png'
+const PRESIDENTIAL_SEAL = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cMhdH8PnCuRMUuhn-17ua.png'
 const HERO_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/0GNEy1EzABEvWsyoKN8b2.jpeg'
 const CEREMONIAL_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cX1jvSh2aF8KtsBomeaSg.jpeg'
 
@@ -16,6 +18,7 @@ export function PresidentHome() {
   const submitContact = useMutation(api.public.submitContact)
   const submitVisit = useMutation(api.public.submitVisitRequest)
   const subscribe = useMutation(api.public.subscribe)
+  const subscribePreferences = useMutation((api as any).public.subscribePreferences)
   const [message, setMessage] = useState('')
   const [visitRef, setVisitRef] = useState('')
   const [newsletter, setNewsletter] = useState('')
@@ -49,7 +52,7 @@ export function PresidentHome() {
       <div className="flag-ribbon" aria-hidden="true"><span/><span/><span/></div>
       <div className="container masthead-inner">
         <div className="identity-lockup">
-          <div className="seal-frame"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal" /></div>
+          <div className="seal-frame"><span className="identity-crop identity-crop-president"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal" /></span></div>
           <div><div className="country-line">Republic of Uganda</div><div className="office-line">Office of the President</div></div>
         </div>
         <div className="masthead-meta"><span>State House</span><span>Official Public Portal</span></div>
@@ -57,7 +60,7 @@ export function PresidentHome() {
     </header>
 
     <nav className="diplomatic-nav"><div className="container diplomatic-nav-inner">
-      <a href="#presidency">The Presidency</a><a href="#executive-government">Executive Government</a><a href="#records">Presidential Records</a><a href="#priorities">National Priorities</a><a href="#news">Newsroom</a><a href="#events">State Events</a><a href="#engage">Public Engagement</a><a href="/admin" className="staff-link">Staff Portal</a>
+      <a href="#presidency">The Presidency</a><a href="#executive-government">Executive Government</a><a href="#records">Presidential Records</a><a href="#presidential-calendar">Presidential Diary</a><a href="#policies-regulations">Policies & Regulations</a><a href="#priorities">National Priorities</a><a href="#news">Newsroom</a><a href="#events">State Events</a><a href="#engage">Public Engagement</a><a href="/admin" className="staff-link">Staff Portal</a>
     </div></nav>
 
     <main>
@@ -73,7 +76,7 @@ export function PresidentHome() {
           </div>
           <aside className="standard-panel">
             <div className="standard-rule">Presidential Standard</div>
-            <img src={PRESIDENTIAL_STANDARD} alt="Presidential Standard" />
+            <span className="identity-crop identity-standard-crop" data-asset="three-symbol-presidential-standard"><img src={PRESIDENTIAL_STANDARD} alt="Presidential Standard" /></span>
             <p>Symbol of the Office of the President and the authority of the Presidency.</p>
           </aside>
         </div>
@@ -93,6 +96,8 @@ export function PresidentHome() {
       </div></section>
 
       <ExecutiveGovernmentDirectory offices={data?.executiveOffices} departments={data?.executiveDepartments} />
+
+      <PresidentialRecordsLibrary events={(data?.events ?? []) as any} documents={(data?.officialDocuments ?? []) as any} />
 
       <section className="formal-section records-section" id="records"><div className="container">
         <div className="section-head light"><div><span className="section-kicker">Presidential Records</span><h2>Official actions and public documents</h2></div><p>Published records appear here only after release by authorized Presidency staff.</p></div>
@@ -114,10 +119,12 @@ export function PresidentHome() {
       </div></section>
 
       <section className="symbols-section"><div className="container symbols-identity">
-        <div className="seal-display"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal and national arms" /></div>
+        <div className="seal-display"><span className="identity-crop identity-crop-president"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal and national arms" /></span></div>
         <div><span className="section-kicker">Symbols of Office</span><h2>The seal and Presidential Standard</h2><p>Presidential symbols are displayed with restraint and ceremony, reinforcing the visual identity of the Office across the public portal.</p></div>
-        <div className="flag-display"><img src={PRESIDENTIAL_STANDARD} alt="Presidential Standard ceremonial flag" /></div>
+        <div className="flag-display"><span className="identity-crop identity-standard-crop" data-asset="three-symbol-presidential-standard"><img src={PRESIDENTIAL_STANDARD} alt="Presidential Standard ceremonial flag" /></span></div>
       </div></section>
+
+      <PublicServiceUX notice={(((data as any)?.emergencyNotice) ?? null) as any} onSubscribe={(input:any)=>subscribePreferences(input)} />
 
       <section className="engagement-section" id="engage"><div className="container">
         <div className="section-head light"><div><span className="section-kicker">Public Engagement</span><h2>Connect with the Office of the President</h2></div><p>Correspondence and State House visit requests are received directly through the Presidency portal.</p></div>
@@ -130,7 +137,7 @@ export function PresidentHome() {
     </main>
 
     <footer className="presidential-footer"><div className="container footer-main">
-      <div className="footer-identity"><div className="seal-frame small"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal footer" /></div><div><span>Republic of Uganda</span><strong>Office of the President</strong></div></div>
+      <div className="footer-identity"><div className="seal-frame small"><span className="identity-crop identity-crop-president"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal footer" /></span></div><div><span>Republic of Uganda</span><strong>Office of the President</strong></div></div>
       <div><h4>The Presidency</h4><a href="#records">Presidential Records</a><a href="#priorities">National Priorities</a><a href="#news">Newsroom</a></div>
       <div><h4>Public Service</h4><a href="#engage">Contact the Office</a><a href="#visit">State House Visits</a><a href="/admin">Staff Portal</a></div>
       <div><h4>Official Contacts</h4><p>Verified phone, email and social-media details will appear here once supplied and approved.</p></div>
