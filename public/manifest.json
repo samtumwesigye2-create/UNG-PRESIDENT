@@ -1,0 +1,9 @@
+{
+  "short_name": "UNG-PRESIDENT",
+  "name": "Office of the President",
+  "icons": [{"src":"favicon.svg","type":"image/svg+xml","sizes":"any"}],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#172038",
+  "background_color": "#f8f5ed"
+}
