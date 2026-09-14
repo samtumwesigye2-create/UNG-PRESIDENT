@@ -1,0 +1,8 @@
+*.db
+*.db-*
+*.secret
+.env*
+.venv/
+__pycache__/
+.pytest_cache/
+node_modules/
