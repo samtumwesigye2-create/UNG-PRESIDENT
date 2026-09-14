@@ -41,11 +41,9 @@ jobs:
           from pathlib import Path
           import json, re
 
-          # Central asset paths
           p=Path('src/lib/presidential-assets.ts')
           p.write_text("""export const PRESIDENTIAL_SEAL_DATA_URI = '/assets/presidential-seal.webp'\nexport const VICE_PRESIDENTIAL_SEAL_DATA_URI = '/assets/vice-presidential-seal.webp'\nexport const NATIONAL_FLAG_DATA_URI = '/assets/national-flag.webp'\n\nexport const PRESIDENTIAL_STANDARD_DATA_URI = PRESIDENTIAL_SEAL_DATA_URI\nexport const HERO_PHOTO_DATA_URI = NATIONAL_FLAG_DATA_URI\nexport const CEREMONIAL_PHOTO_DATA_URI = PRESIDENTIAL_SEAL_DATA_URI\n""")
 
-          # Homepage: remove remote image constants, use repository assets, add fixed three-badge placement.
           p=Path('src/routes/index.tsx')
           s=p.read_text()
           if "../lib/presidential-assets" not in s:
@@ -60,7 +58,6 @@ jobs:
               s=s.replace(anchor, badge+'\n'+anchor)
           p.write_text(s)
 
-          # Staff portal seal
           p=Path('src/components/staff-portal.tsx')
           s=p.read_text()
           if "../lib/presidential-assets" not in s:
@@ -69,10 +66,8 @@ jobs:
           s=re.sub(r"const EXECUTIVE_SEAL = 'https://assets\.macaly-user-data\.dev[^']*'", "const EXECUTIVE_SEAL = PRESIDENTIAL_SEAL_DATA_URI", s)
           p.write_text(s)
 
-          # Vice-president identity artwork: no sprite/crop hacks, fixed local asset.
           Path('src/components/vice-president-seal.tsx').write_text("""import { NATIONAL_FLAG_DATA_URI, VICE_PRESIDENTIAL_SEAL_DATA_URI } from '../lib/presidential-assets'\n\nexport function VicePresidentSeal({className=''}:{className?:string}){\n  return <span className={`vp-seal-from-identity-plate ${className}`} role=\"img\" aria-label=\"Vice President of the Republic of Uganda seal\">\n    <img src={VICE_PRESIDENTIAL_SEAL_DATA_URI} alt=\"Vice President of the Republic of Uganda seal\" />\n  </span>\n}\n\nexport function VicePresidentialFlag(){\n  return <div className=\"vp-flag-frame\">\n    <img src={NATIONAL_FLAG_DATA_URI} alt=\"Vice Presidential flag field\" />\n    <div className=\"vp-flag-seal-cover\" aria-hidden=\"true\"><VicePresidentSeal className=\"h-full w-full\" /></div>\n  </div>\n}\n""")
 
-          # Fixed placement CSS, using contain rather than background-position cropping.
           p=Path('src/styles.css')
           s=p.read_text()
           css='''\n\n/* Approved presidential identity placement */\n.official-symbols-row{background:#f7f5ef;border-top:1px solid rgba(11,31,58,.12);border-bottom:1px solid rgba(11,31,58,.12);padding:34px 0}\n.official-symbols-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;text-align:center}\n.official-symbol-card{display:flex;flex-direction:column;align-items:center;gap:7px}\n.official-symbol-circle{width:150px;height:150px;border-radius:50%;display:grid;place-items:center;background:#fff;border:3px solid #c9a227;box-shadow:0 8px 24px rgba(7,21,39,.12);overflow:hidden;padding:8px}\n.official-symbol-circle img{width:100%;height:100%;object-fit:contain;object-position:center;display:block}\n.official-symbol-card h3{margin:8px 0 0;text-transform:uppercase;letter-spacing:.08em;font-size:.92rem;color:#0b1f3a}\n.official-symbol-card p{margin:0;font-size:.8rem;color:#5a5a5a}\n.vp-seal-from-identity-plate{display:inline-grid;place-items:center;overflow:hidden;border-radius:50%}\n.vp-seal-from-identity-plate img{width:100%;height:100%;object-fit:contain;object-position:center;display:block}\n@media(max-width:720px){.official-symbols-grid{grid-template-columns:1fr;gap:24px}.official-symbol-circle{width:132px;height:132px}}\n'''
@@ -80,20 +75,18 @@ jobs:
               s += css
           p.write_text(s)
 
-          # Remove banned build-time Macaly packages.
           p=Path('package.json')
           data=json.loads(p.read_text())
           data.get('dependencies',{}).pop('@macaly/bridge',None)
           data.get('devDependencies',{}).pop('@macaly/static-tagger',None)
           p.write_text(json.dumps(data,indent=2)+'\n')
 
-          # Update asset-path test to WEBP outputs.
           p=Path('__tests__/presidential-asset-paths.test.ts')
           s=p.read_text().replace('/assets/presidential-seal.png','/assets/presidential-seal.webp').replace('/assets/vice-presidential-seal.png','/assets/vice-presidential-seal.webp').replace('/assets/national-flag.png','/assets/national-flag.webp')
           p.write_text(s)
           PY
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: Verify no banned Macaly references in runtime source
         run: |
           if grep -R "macaly-user-data.dev\|@macaly/" src package.json; then
