@@ -2,8 +2,9 @@ import { useAuthActions } from '@convex-dev/auth/react'
 import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from 'convex/react'
 import { useState, type FormEvent } from 'react'
 import { api } from '../../convex/_generated/api'
+import { PRESIDENTIAL_SEAL_DATA_URI } from '../lib/presidential-assets'
 
-const EXECUTIVE_SEAL = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/nO8TOweGAmSWEz5Jojfg0.jpeg'
+const EXECUTIVE_SEAL = PRESIDENTIAL_SEAL_DATA_URI
 
 type LoginProps = { busy:boolean; error:string|null; onSubmit:(event:FormEvent<HTMLFormElement>)=>void }
 type EnrollmentProps = { email:string; busy:boolean; notice:string|null; onSubmit:(event:FormEvent<HTMLFormElement>)=>void }

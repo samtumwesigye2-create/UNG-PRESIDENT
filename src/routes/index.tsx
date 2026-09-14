@@ -5,13 +5,13 @@ import { FormEvent, useState } from 'react'
 import { ExecutiveGovernmentDirectory } from '../components/executive-government-directory'
 import { PresidentialRecordsLibrary } from '../components/presidential-records-library'
 import { PublicServiceUX } from '../components/public-service-ux'
+import { PRESIDENTIAL_SEAL_DATA_URI, VICE_PRESIDENTIAL_SEAL_DATA_URI, NATIONAL_FLAG_DATA_URI, PRESIDENTIAL_STANDARD_DATA_URI, CEREMONIAL_PHOTO_DATA_URI } from '../lib/presidential-assets'
 
 export const Route = createFileRoute('/')({ component: PresidentHome })
 
-const PRESIDENTIAL_STANDARD = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cMhdH8PnCuRMUuhn-17ua.png'
-const PRESIDENTIAL_SEAL = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cMhdH8PnCuRMUuhn-17ua.png'
-const HERO_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/0GNEy1EzABEvWsyoKN8b2.jpeg'
-const CEREMONIAL_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cX1jvSh2aF8KtsBomeaSg.jpeg'
+const PRESIDENTIAL_STANDARD = PRESIDENTIAL_STANDARD_DATA_URI
+const PRESIDENTIAL_SEAL = PRESIDENTIAL_SEAL_DATA_URI
+const CEREMONIAL_PHOTO = CEREMONIAL_PHOTO_DATA_URI
 
 export function PresidentHome() {
   const data = useQuery(api.public.homepage)
@@ -65,7 +65,6 @@ export function PresidentHome() {
 
     <main>
       <section className="presidential-hero" id="presidency" data-state={data === undefined ? 'loading' : 'ready'}>
-        <div className="hero-photo"><img src={HERO_PHOTO} alt="Presidential official imagery" /></div>
         <div className="hero-shade"/>
         <div className="container hero-grid">
           <div className="hero-copy-block">
@@ -81,6 +80,13 @@ export function PresidentHome() {
           </aside>
         </div>
       </section>
+
+
+      <section className="official-symbols-row" aria-label="Official symbols of the Presidency"><div className="container official-symbols-grid">
+        <article className="official-symbol-card"><div className="official-symbol-circle"><img src={NATIONAL_FLAG_DATA_URI} alt="National Flag of the Republic of Uganda" /></div><h3>National Flag</h3><p>Republic of Uganda</p></article>
+        <article className="official-symbol-card"><div className="official-symbol-circle"><img src={PRESIDENTIAL_SEAL_DATA_URI} alt="Presidential Standard of the Republic of Uganda" /></div><h3>Presidential Standard</h3><p>Office of the President</p></article>
+        <article className="official-symbol-card"><div className="official-symbol-circle"><img src={VICE_PRESIDENTIAL_SEAL_DATA_URI} alt="Vice Presidential Flag of the Republic of Uganda" /></div><h3>Vice Presidential Flag</h3><p>Office of the Vice President</p></article>
+      </div></section>
 
       <section className="presidential-strip"><div className="container strip-grid">
         <div><span className="strip-number">{data?.executiveOrders.length ?? 0}</span><span>Executive Orders</span></div>

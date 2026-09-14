@@ -197,3 +197,16 @@ button,input,textarea,select { font:inherit; }
 .vp-flag-frame > img { position:absolute; width:118%; height:118%; max-width:none; left:-9%; top:-9%; object-fit:cover; object-position:center 53%; }
 .vp-seal-overlay { position:absolute; left:50%; top:47%; width:34%; aspect-ratio:1; transform:translate(-50%,-50%); border-radius:9999px; overflow:hidden; background:#fff; box-shadow:0 0 0 4px rgba(255,255,255,.9); }
 .vp-seal-overlay .vp-seal-from-identity-plate { width:100%; height:100%; }
+
+
+/* Approved presidential identity placement */
+.official-symbols-row{background:#f7f5ef;border-top:1px solid rgba(11,31,58,.12);border-bottom:1px solid rgba(11,31,58,.12);padding:34px 0}
+.official-symbols-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;text-align:center}
+.official-symbol-card{display:flex;flex-direction:column;align-items:center;gap:7px}
+.official-symbol-circle{width:150px;height:150px;border-radius:50%;display:grid;place-items:center;background:#fff;border:3px solid #c9a227;box-shadow:0 8px 24px rgba(7,21,39,.12);overflow:hidden;padding:8px}
+.official-symbol-circle img{width:100%;height:100%;object-fit:contain;object-position:center;display:block}
+.official-symbol-card h3{margin:8px 0 0;text-transform:uppercase;letter-spacing:.08em;font-size:.92rem;color:#0b1f3a}
+.official-symbol-card p{margin:0;font-size:.8rem;color:#5a5a5a}
+.vp-seal-from-identity-plate{display:inline-grid;place-items:center;overflow:hidden;border-radius:50%}
+.vp-seal-from-identity-plate img{width:100%;height:100%;object-fit:contain;object-position:center;display:block}
+@media(max-width:720px){.official-symbols-grid{grid-template-columns:1fr;gap:24px}.official-symbol-circle{width:132px;height:132px}}
