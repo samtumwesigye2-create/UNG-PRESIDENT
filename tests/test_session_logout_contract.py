@@ -7,5 +7,5 @@ import ung_president as app
 
 
 def test_logout_revokes_persistent_session():
-    source = inspect.getsource(app.admin_logout)
+    source = inspect.getsource(app.logout)
     assert 'revoke_persistent_session' in source
