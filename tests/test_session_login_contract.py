@@ -7,7 +7,7 @@ import ung_president as app
 
 
 def test_login_creates_persistent_session():
-    source = inspect.getsource(app.admin_login_post)
+    source = inspect.getsource(app.login)
     assert 'create_persistent_session' in source
 
 
