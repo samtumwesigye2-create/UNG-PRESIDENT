@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(tmp_path):
     app.DB_PATH = str(tmp_path / 'test.db')
+    app.DATABASE_URL = ''
     app._rate_buckets.clear()
     with contextlib.redirect_stdout(io.StringIO()):
         with TestClient(app.app) as c:
@@ -150,3 +151,36 @@ def test_visit_request_validation(client):
         'requested_date': '2026-10-01', 'party_size': 1,
     })
     assert response.status_code == 422
+
+
+def test_server_side_session_can_be_revoked(client):
+    hashed, salt = app.hash_password('Strong-password-123')
+    with app.db_cursor(commit=True) as cur:
+        cur.execute('INSERT INTO users(username,password_hash,salt,role,full_name) VALUES(?,?,?,?,?)',
+                    ('revocable', hashed, salt, 'admin', 'Revocable Administrator'))
+    login = client.post('/admin/login', data={
+        'username': 'revocable', 'password': 'Strong-password-123'
+    }, follow_redirects=False)
+    assert login.status_code == 303
+    assert client.get('/admin').status_code == 200
+    with app.db_cursor(commit=True) as cur:
+        cur.execute('UPDATE sessions SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=(SELECT id FROM users WHERE username=?)', ('revocable',))
+    revoked = client.get('/admin', follow_redirects=False)
+    assert revoked.status_code == 303
+    assert revoked.headers['location'] == '/admin/login'
+
+
+def test_expired_server_side_session_is_rejected(client):
+    hashed, salt = app.hash_password('Strong-password-123')
+    with app.db_cursor(commit=True) as cur:
+        cur.execute('INSERT INTO users(username,password_hash,salt,role,full_name) VALUES(?,?,?,?,?)',
+                    ('expired', hashed, salt, 'admin', 'Expired Administrator'))
+    login = client.post('/admin/login', data={
+        'username': 'expired', 'password': 'Strong-password-123'
+    }, follow_redirects=False)
+    assert login.status_code == 303
+    with app.db_cursor(commit=True) as cur:
+        cur.execute("UPDATE sessions SET expires_at='2000-01-01 00:00:00' WHERE user_id=(SELECT id FROM users WHERE username=?)", ('expired',))
+    expired = client.get('/admin', follow_redirects=False)
+    assert expired.status_code == 303
+    assert expired.headers['location'] == '/admin/login'
