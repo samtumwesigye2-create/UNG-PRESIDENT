@@ -77,3 +77,76 @@ def test_embedded_artwork_decodes():
     import base64
     for encoded in [app.PRES_SEAL_B64, app.VP_SEAL_B64, app.NAT_FLAG_B64]:
         assert base64.b64decode(encoded).startswith(b'\x89PNG\r\n\x1a\n')
+
+
+def test_security_headers_and_sensitive_cache_policy(client):
+    public = client.get('/')
+    assert public.headers['x-content-type-options'] == 'nosniff'
+    assert public.headers['x-frame-options'] == 'DENY'
+    assert public.headers['referrer-policy'] == 'no-referrer'
+    assert public.headers['permissions-policy'] == 'camera=(), geolocation=(), microphone=()'
+    assert 'strict-transport-security' not in public.headers
+
+    admin = client.get('/admin/login')
+    assert admin.headers['cache-control'] == 'no-store, max-age=0'
+    assert admin.headers['pragma'] == 'no-cache'
+
+
+def test_cross_site_post_is_rejected(client):
+    response = client.post(
+        '/petition',
+        headers={'origin': 'https://attacker.example'},
+        data={
+            'petitioner_name': 'Citizen',
+            'email': 'citizen@example.com',
+            'subject': 'Road',
+            'message': 'Please review this road.',
+        },
+    )
+    assert response.status_code == 403
+
+
+def test_public_form_validation_rejects_bad_email_and_oversized_input(client):
+    bad_email = client.post('/petition', data={
+        'petitioner_name': 'Citizen', 'email': 'not-an-email',
+        'subject': 'Road', 'message': 'Please review this road.',
+    })
+    assert bad_email.status_code == 422
+
+    oversized = client.post('/petition', data={
+        'petitioner_name': 'Citizen', 'email': 'citizen@example.com',
+        'subject': 'R' * 201, 'message': 'Please review this road.',
+    })
+    assert oversized.status_code == 422
+
+
+def test_database_backend_selection(monkeypatch):
+    monkeypatch.setattr(app, 'DATABASE_URL', '')
+    assert app.database_backend() == 'sqlite'
+    monkeypatch.setattr(app, 'DATABASE_URL', 'postgresql://user:pass@db.example/president')
+    assert app.database_backend() == 'postgresql'
+
+
+def test_session_is_revalidated_against_current_account(client):
+    hashed, salt = app.hash_password('Strong-password-123')
+    with app.db_cursor(commit=True) as cur:
+        cur.execute('INSERT INTO users(username,password_hash,salt,role,full_name) VALUES(?,?,?,?,?)',
+                    ('temporary', hashed, salt, 'admin', 'Temporary Administrator'))
+    assert client.post('/admin/login', data={
+        'username': 'temporary', 'password': 'Strong-password-123'
+    }, follow_redirects=False).status_code == 303
+    assert client.get('/admin').status_code == 200
+    with app.db_cursor(commit=True) as cur:
+        cur.execute('UPDATE users SET username=? WHERE username=?', ('revoked-temporary', 'temporary'))
+    revoked = client.get('/admin', follow_redirects=False)
+    assert revoked.status_code == 303
+    assert revoked.headers['location'] == '/admin/login'
+
+
+def test_visit_request_validation(client):
+    response = client.post('/visit', data={
+        'requester_name': 'Citizen', 'email': 'invalid', 'phone': '',
+        'organization': '', 'purpose': 'Courtesy visit',
+        'requested_date': '2026-10-01', 'party_size': 1,
+    })
+    assert response.status_code == 422
