@@ -48,6 +48,9 @@ RESET_COMPLETE = """
 
 
 def _ensure_schema():
+    # The extension may be the process entrypoint on a brand-new Railway
+    # filesystem. Create the core tables before extending the users schema.
+    core.init_db()
     with core.db_cursor(commit=True) as cur:
         cur.execute("""CREATE TABLE IF NOT EXISTS password_reset_tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
