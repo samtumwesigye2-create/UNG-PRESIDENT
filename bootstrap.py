@@ -27,6 +27,8 @@ if __name__ == "__main__":
     ensure_initial_hr_code()
     import registration_response_fix
     registration_response_fix.apply_registration_response_fix()
+    import president_expanded_admin
+    president_expanded_admin.apply_expanded_admin()
     import uvicorn
     import password_reset
     uvicorn.run(password_reset.core.app, host="0.0.0.0", port=int(__import__('os').environ.get("PORT", "8000")))
