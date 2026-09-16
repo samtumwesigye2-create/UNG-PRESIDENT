@@ -4,10 +4,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import password_reset as reset
+import ung_president as app
 from fastapi.testclient import TestClient
 
-app = reset.core
+
+def _load_reset():
+    import password_reset as reset
+    return reset
 
 
 def _register_staff(client):
@@ -24,6 +27,9 @@ def test_staff_login_exposes_password_reset_and_reset_route(tmp_path):
     app.DB_PATH = str(tmp_path / 'reset.db')
     app._rate_buckets.clear()
     with contextlib.redirect_stdout(io.StringIO()):
+        app.init_db()
+        reset = _load_reset()
+        reset._ensure_schema()
         with TestClient(app.app) as client:
             login = client.get('/admin/login')
             assert login.status_code == 200
@@ -37,6 +43,9 @@ def test_password_reset_changes_password_and_rejects_token_reuse(tmp_path):
     app.DB_PATH = str(tmp_path / 'reset.db')
     app._rate_buckets.clear()
     with contextlib.redirect_stdout(io.StringIO()):
+        app.init_db()
+        reset = _load_reset()
+        reset._ensure_schema()
         with TestClient(app.app) as client:
             _register_staff(client)
             token = reset.create_password_reset_token('staff', 'recovery@example.com')
