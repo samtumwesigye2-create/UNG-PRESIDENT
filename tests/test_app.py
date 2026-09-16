@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 def client(tmp_path):
     app.DB_PATH = str(tmp_path / 'test.db')
     app._rate_buckets.clear()
+    import registration_response_fix
+    registration_response_fix.apply_registration_response_fix()
     with contextlib.redirect_stdout(io.StringIO()):
         with TestClient(app.app) as c:
             yield c
