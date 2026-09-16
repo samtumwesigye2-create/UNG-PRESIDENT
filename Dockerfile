@@ -5,6 +5,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY ung_president.py .
 COPY password_reset.py .
 COPY registration_response_fix.py .
+COPY president_expanded_data.py .
+COPY president_expanded_admin.py .
 COPY bootstrap.py .
 EXPOSE 8000
 CMD ["python", "bootstrap.py"]
