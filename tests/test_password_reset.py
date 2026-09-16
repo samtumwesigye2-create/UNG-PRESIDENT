@@ -59,3 +59,21 @@ def test_password_reset_changes_password_and_rejects_token_reuse(tmp_path):
             assert not app.verify_password('Old-password-123!', row['password_hash'], row['salt'])
             reused = client.post('/admin/password-reset/complete', data={'token':token, 'password':'Another-password-789!', 'confirm_password':'Another-password-789!'}, follow_redirects=False)
             assert reused.status_code == 400
+
+
+def test_password_reset_post_returns_html_not_json(tmp_path):
+    app.DB_PATH = str(tmp_path / 'reset-post.db')
+    app._rate_buckets.clear()
+    with contextlib.redirect_stdout(io.StringIO()):
+        app.init_db()
+        reset = _load_reset()
+        reset._ensure_schema()
+        with TestClient(app.app) as client:
+            response = client.post('/admin/password-reset', data={
+                'username': 'missing-user',
+                'personal_email': 'missing@example.com',
+            })
+            assert response.status_code == 200
+            assert response.headers['content-type'].startswith('text/html')
+            assert response.text.lstrip().startswith('<!DOCTYPE html>')
+            assert '\\n<!DOCTYPE html>' not in response.text
