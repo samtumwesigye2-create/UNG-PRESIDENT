@@ -4,8 +4,15 @@ import ung_president as core
 
 
 def apply_registration_response_fix():
-    for route in core.app.routes:
+    for index, route in enumerate(core.app.routes):
         if getattr(route, "path", None) == "/admin/register/details" and "POST" in getattr(route, "methods", set()):
-            route.response_class = HTMLResponse
+            endpoint = route.endpoint
+            core.app.routes.pop(index)
+            core.app.add_api_route(
+                "/admin/register/details",
+                endpoint,
+                methods=["POST"],
+                response_class=HTMLResponse,
+            )
             return True
     raise RuntimeError("POST /admin/register/details route not found")
