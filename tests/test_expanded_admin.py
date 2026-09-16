@@ -31,6 +31,8 @@ def client(tmp_path):
     app.init_db()
     import registration_response_fix
     registration_response_fix.apply_registration_response_fix()
+    import president_expanded_admin
+    president_expanded_admin.apply_expanded_admin()
     with contextlib.redirect_stdout(io.StringIO()):
         with TestClient(app.app) as c:
             yield c
