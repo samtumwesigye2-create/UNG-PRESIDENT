@@ -1,0 +1,22 @@
+name: Security Hardening Branch
+
+on:
+  push:
+    branches: [security-hardening]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  security-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.20.0'
+      - run: npm install
+      - run: npx vitest run __tests__/security-*.test.ts __tests__/auth-security.test.ts
+      - run: npm run build
