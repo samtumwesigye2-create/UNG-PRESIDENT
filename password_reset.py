@@ -23,7 +23,13 @@ RESET_TOKEN_MAX_AGE_SECONDS = 20 * 60
 
 RESET_REQUEST = """
 {% extends "base" %}{% block title %}Reset Staff Password{% endblock %}
-{% block content %}<div class="container" style="max-width:620px;">
+{% block content %}<style>
+.reset-card{width:100%;max-width:620px;box-sizing:border-box;overflow-wrap:anywhere}
+.reset-card .section-title{font-size:clamp(2rem,8vw,3.4rem);line-height:1.05}
+.reset-card input,.reset-card button{max-width:100%;box-sizing:border-box}
+.reset-card .hint{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+@media (max-width:640px){.reset-card{padding-left:20px;padding-right:20px}.reset-card .section-title{font-size:clamp(2rem,10vw,2.8rem)}.reset-card .btn{width:100%}}
+</style><div class="container reset-card">
 <h2 class="section-title">Reset Staff Password</h2>
 {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
 <form class="stack" method="post" action="/admin/password-reset">
@@ -35,8 +41,8 @@ RESET_REQUEST = """
 """
 RESET_COMPLETE = """
 {% extends "base" %}{% block title %}Choose New Password{% endblock %}
-{% block content %}<div class="container" style="max-width:620px;">
-<h2 class="section-title">Choose New Password</h2>
+{% block content %}<div class="container" style="width:100%;max-width:620px;box-sizing:border-box;overflow-wrap:anywhere;">
+<h2 class="section-title" style="font-size:clamp(2rem,8vw,3.4rem);line-height:1.05;">Choose New Password</h2>
 {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
 <form class="stack" method="post" action="/admin/password-reset/complete">
 <input type="hidden" name="token" value="{{ token }}">
@@ -48,8 +54,6 @@ RESET_COMPLETE = """
 
 
 def _ensure_schema():
-    # The extension may be the process entrypoint on a brand-new Railway
-    # filesystem. Create the core tables before extending the users schema.
     core.init_db()
     with core.db_cursor(commit=True) as cur:
         cur.execute("""CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -70,7 +74,6 @@ def _token_hash(token: str) -> str:
 
 
 def create_password_reset_token(username: str, personal_email: str):
-    """Return a reset token only when username + registered recovery email match."""
     _ensure_schema()
     with core.db_cursor() as cur:
         cur.execute("""SELECT u.id FROM users u JOIN staff_profiles s ON s.user_id=u.id
@@ -146,7 +149,7 @@ def install():
     def reset_form(message: str = ""):
         return core.render("password_reset", message=message)
 
-    @core.app.post("/admin/password-reset")
+    @core.app.post("/admin/password-reset", response_class=HTMLResponse)
     def reset_request(request: Request, username: str = Form(...), personal_email: str = Form(...)):
         generic = "If the information matches a staff account, reset instructions have been sent."
         if core.is_rate_limited(f"password-reset:{core.client_ip(request)}", 5, 900):
