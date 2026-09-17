@@ -21,6 +21,9 @@ EXPANDED_ROUTES = [
     ("Treaties / Archive", "/admin/treaties"),
     ("Approvals", "/admin/approvals"),
     ("Biometrics", "/admin/biometrics"),
+    ("Executive Office", "/admin/executive-office"),
+    ("Finance & Treasury", "/admin/finance-treasury"),
+    ("Foreign Affairs & Diplomacy", "/admin/foreign-affairs"),
 ]
 
 
