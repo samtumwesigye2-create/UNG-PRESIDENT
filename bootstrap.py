@@ -2,17 +2,6 @@
 import secrets
 import ung_president as core
 
-# Staff Admin intentionally keeps its computer/desktop canvas on narrow screens.
-# Phones may pan horizontally instead of collapsing the sidebar above the content.
-core.CSS += """
-html,body{overflow-x:auto!important;}
-.admin-shell{display:flex!important;flex-direction:row!important;align-items:stretch!important;min-width:1180px!important;}
-.admin-sidebar{width:260px!important;flex:0 0 260px!important;min-height:100vh!important;}
-.admin-main{width:920px!important;flex:0 0 920px!important;padding:32px!important;}
-.admin-main .grid{grid-template-columns:repeat(3,minmax(240px,1fr))!important;}
-.admin-main table{min-width:850px!important;}
-"""
-
 
 def ensure_initial_hr_code():
     core.init_db()
@@ -23,13 +12,9 @@ def ensure_initial_hr_code():
         unused = cur.fetchone()["n"]
     if users or unused:
         return None
-
     code = "-".join(secrets.token_hex(2).upper() for _ in range(3))
     with core.db_cursor(commit=True) as cur:
-        cur.execute(
-            "INSERT INTO hr_codes (code_hash, role, assigned_name, note) VALUES (?, ?, ?, ?)",
-            (core.hash_hr_code(code), "admin", "Initial Administrator", "One-time production bootstrap"),
-        )
+        cur.execute("INSERT INTO hr_codes (code_hash, role, assigned_name, note) VALUES (?, ?, ?, ?)",(core.hash_hr_code(code), "admin", "Initial Administrator", "One-time production bootstrap"))
     print(f"UNG-PRESIDENT INITIAL HR CODE: {code}", flush=True)
     return code
 
@@ -39,6 +24,8 @@ if __name__ == "__main__":
     import registration_response_fix
     registration_response_fix.apply_registration_response_fix()
     import president_expanded_admin
+    import desktop_admin_fix
+    desktop_admin_fix.apply_desktop_admin_fix()
     president_expanded_admin.apply_expanded_admin()
     import president_nsc
     president_nsc.apply_nsc(core)
