@@ -1,6 +1,7 @@
 """Force the expanded Staff Admin UI to render as a desktop canvas on narrow devices."""
 from html import escape
 import president_expanded_admin as expanded
+import ung_president as core
 from fastapi.responses import HTMLResponse
 
 
@@ -13,6 +14,9 @@ def apply_desktop_admin_fix():
         .desktop-shell{{display:grid;grid-template-columns:260px 920px;width:1180px;min-height:100vh;align-items:stretch}}
         aside{{width:260px;box-sizing:border-box;background:#07152a;padding:28px 18px;overflow:auto;min-height:100vh}}
         aside a{{display:block;color:#fff;text-decoration:none;padding:10px 0;font-size:14px}}
+        .admin-brand{{text-align:center;margin:0 0 22px}}
+        .admin-seal{{display:block;width:112px;height:112px;object-fit:contain;margin:0 auto 14px}}
+        .admin-name{{color:white;font-weight:800;font-size:17px;letter-spacing:.5px}}
         main{{width:920px;box-sizing:border-box;padding:34px 38px}}
         .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}}
         .card{{background:white;border:1px solid #ddd4c5;border-radius:10px;padding:18px}}
@@ -27,7 +31,7 @@ def apply_desktop_admin_fix():
         .toolbar input{{min-width:230px}}.muted{{color:#667085}}.actions{{display:flex;gap:6px;flex-wrap:wrap}}
         .actions form{{display:inline}}.actions button{{padding:6px 9px;font-size:12px}}
         </style></head><body><div class='desktop-shell'><aside>
-        <div style='color:white;font-weight:800;font-size:17px;margin-bottom:12px'>UNG-PRESIDENT</div>
+        <div class='admin-brand'><img class='admin-seal' src='data:image/png;base64,{core.PRES_SEAL_B64}' alt='Presidential Seal'><div class='admin-name'>UNG-PRESIDENT</div></div>
         <a href='/admin'>Dashboard</a>{expanded._nav()}<a href='/admin/logout' style='color:#ff9a9a'>Logout</a>
         </aside><main><h1>{escape(title)}</h1><p>Signed in as <strong>{escape(user['username'])}</strong> ({escape(user['role'])})</p>{body}</main></div></body></html>""")
     expanded._shell = desktop_shell
