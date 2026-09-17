@@ -10,7 +10,7 @@ def apply_desktop_admin_fix():
     core.CSS += """
     .badge-row{gap:42px;padding:64px 24px 30px;align-items:flex-start}
     .badge-item{max-width:310px;width:310px}
-    .badge-circle{position:relative;width:286px;height:286px;background:#07152a;display:flex;align-items:center;justify-content:center;padding:26px;isolation:isolate}\n    .badge-circle::before{content:"";position:absolute;inset:8px;border-radius:50%;background:linear-gradient(to bottom,transparent 0 34%,#000 34% 43%,#d71920 43% 52%,#fcdc04 52% 61%,transparent 61% 100%);z-index:0}\n    .badge-circle img{position:relative;z-index:1;background:transparent}
+    .badge-circle{position:relative;width:286px;height:286px;background:#07152a;display:flex;align-items:center;justify-content:center;padding:26px;isolation:isolate}\n    .badge-circle::before{content:"";position:absolute;left:8px;right:8px;top:50%;height:78px;transform:translateY(-50%);background:linear-gradient(to bottom,#000 0 33.333%,#d71920 33.333% 66.666%,#fcdc04 66.666% 100%);z-index:2;pointer-events:none}\n    .badge-item:nth-child(2) .badge-circle img{z-index:3;clip-path:circle(42% at 50% 50%)}\n    .badge-item:nth-child(3) .badge-circle::before{display:none}\n    .badge-item:nth-child(3) .badge-circle img{z-index:3;object-fit:contain;padding:4px;box-sizing:border-box}\n    .badge-circle img{position:relative;z-index:1;background:transparent}
     .badge-circle img{position:relative;z-index:1;width:100%;height:100%;object-fit:contain;object-position:center center;display:block;border-radius:50%;background:transparent}
     @media(max-width:900px){
       .badge-row{gap:34px}
