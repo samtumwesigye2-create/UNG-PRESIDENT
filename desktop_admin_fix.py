@@ -6,16 +6,16 @@ from fastapi.responses import HTMLResponse
 
 
 def apply_desktop_admin_fix():
-    # Public home: larger circles and full, uncropped artwork.
+    # Public home: larger circles with an inset artwork stage so no emblem text is clipped.
     core.CSS += """
     .badge-row{gap:42px;padding:64px 24px 30px;align-items:flex-start}
-    .badge-item{max-width:300px;width:300px}
-    .badge-circle{width:270px;height:270px;background:#07152a}
-    .badge-circle img{width:100%;height:100%;object-fit:contain;object-position:center center;display:block}
+    .badge-item{max-width:310px;width:310px}
+    .badge-circle{width:286px;height:286px;background:#07152a;display:flex;align-items:center;justify-content:center;padding:18px}
+    .badge-circle img{width:100%;height:100%;object-fit:contain;object-position:center center;display:block;border-radius:50%}
     @media(max-width:900px){
       .badge-row{gap:34px}
-      .badge-item{max-width:280px;width:280px}
-      .badge-circle{width:250px;height:250px}
+      .badge-item{max-width:290px;width:290px}
+      .badge-circle{width:268px;height:268px;padding:17px}
     }
     """
 
