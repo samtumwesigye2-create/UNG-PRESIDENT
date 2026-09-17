@@ -2,6 +2,17 @@
 import secrets
 import ung_president as core
 
+# Staff Admin intentionally keeps its computer/desktop canvas on narrow screens.
+# Phones may pan horizontally instead of collapsing the sidebar above the content.
+core.CSS += """
+html,body{overflow-x:auto!important;}
+.admin-shell{display:flex!important;flex-direction:row!important;align-items:stretch!important;min-width:1180px!important;}
+.admin-sidebar{width:260px!important;flex:0 0 260px!important;min-height:100vh!important;}
+.admin-main{width:920px!important;flex:0 0 920px!important;padding:32px!important;}
+.admin-main .grid{grid-template-columns:repeat(3,minmax(240px,1fr))!important;}
+.admin-main table{min-width:850px!important;}
+"""
+
 
 def ensure_initial_hr_code():
     core.init_db()
