@@ -9,6 +9,7 @@ COPY president_expanded_data.py .
 COPY president_expanded_admin.py .
 COPY president_nsc.py .
 COPY president_un_affairs.py .
+COPY desktop_admin_fix.py .
 COPY bootstrap.py .
 EXPOSE 8000
 CMD ["python", "bootstrap.py"]
