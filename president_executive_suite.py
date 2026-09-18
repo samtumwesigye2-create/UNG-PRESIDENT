@@ -184,7 +184,9 @@ async def create_meeting(core, request: Request):
 
 def apply_executive_suite(core):
     init_schema(core)
-    core.app.add_api_route("/admin/executive-suite", lambda request: dashboard(core, request), methods=["GET"], response_class=HTMLResponse)
+    def suite_home(request: Request):
+        return dashboard(core, request)
+    core.app.add_api_route("/admin/executive-suite", suite_home, methods=["GET"], response_class=HTMLResponse)
     async def msg(request: Request): return await create_message(core, request)
     async def arc(request: Request): return await create_archive(core, request)
     async def mtg(request: Request): return await create_meeting(core, request)
