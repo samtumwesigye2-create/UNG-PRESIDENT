@@ -214,7 +214,7 @@ def _decrypt(value):
 
 
 def _shell(user, body):
-    return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=1180,initial-scale=1"><title>{escape(_title(user["role"]))} Executive Suite</title>
+    page = f"""<!doctype html><html><head><meta name="viewport" content="width=1180,initial-scale=1"><title>{escape(_title(user["role"]))} Executive Suite</title>
 <style>
 *{{box-sizing:border-box}}html,body{{margin:0;min-width:1180px;background:#07111f;color:#edf2f7;font-family:Arial,sans-serif}}body{{overflow-x:auto}}
 .top{{height:118px;background:linear-gradient(90deg,#061529,#0b2948);border-bottom:2px solid #caa447;display:flex;align-items:center;justify-content:space-between;padding:0 34px}}.brand{{display:flex;align-items:center;gap:16px}}.brand-seal{{width:72px;height:72px;border-radius:50%;overflow:hidden;border:2px solid #caa447;box-shadow:0 0 0 3px #0b1d30}}.brand-seal img{{width:100%;height:100%;object-fit:cover;display:block}}.brand h1{{font:30px Georgia;margin:0}}.brand small{{color:#d7b85c;letter-spacing:2px}}.who{{text-align:right;color:#aebdcb;font-size:12px;padding:10px 14px;border:1px solid #2c435a;border-radius:10px;background:#091a2b}}
@@ -223,7 +223,8 @@ main{{padding:26px 30px 38px;max-width:1450px}}.hero{{background:linear-gradient
 .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}}.card,.panel{{background:#0c1d2e;border:1px solid #233b53;border-radius:13px;padding:18px;box-shadow:0 5px 14px #0004}}.card h3{{color:#f0cc67;margin-top:0}}.card p{{color:#aebdcb;font-size:13px;line-height:1.45}}
 .two{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}}label{{display:block;font-size:12px;font-weight:700;margin:10px 0 5px;color:#c9d3dd}}input,textarea,select{{width:100%;background:#07131f;color:#eef3f8;border:1px solid #334a61;border-radius:7px;padding:10px}}textarea{{min-height:88px}}button{{margin-top:12px;background:#c7a247;color:#07111f;border:0;border-radius:7px;padding:10px 14px;font-weight:800}}table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}}th,td{{padding:9px;border-bottom:1px solid #24384b;text-align:left;vertical-align:top}}th{{color:#d9ba61}}.suite-planner{{background:linear-gradient(135deg,#0c1d2e,#102842);border-color:#34516d}}.suite-planner h3{{font:22px Georgia;color:#f0d37b;margin-bottom:4px}}.suite-planner .intro{{color:#9fb2c3;font-size:12px;margin:0 0 12px}}
 </style></head><body><div class="top"><div class="brand"><div class="brand-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h1>DIGITAL EXECUTIVE SUITE</h1><small>PRINCIPAL PORTAL · UNG-PRESIDENT</small></div></div><div class="who">{escape(_title(user["role"]).upper())}<br><strong>{escape(user["username"])}</strong></div></div>
-<div class="layout"><aside><a href="/executive">Executive Home</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>""")
+<div class="layout"><aside><a href="/executive">Executive Home</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
+    return HTMLResponse(page.replace("__PRES_SEAL__", core.PRES_SEAL_B64))
 
 
 def dashboard(request: Request):
