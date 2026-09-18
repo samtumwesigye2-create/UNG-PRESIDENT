@@ -185,7 +185,12 @@ async def create_meeting(core, request: Request):
 
 
 def suite_home(request: Request):
-    return dashboard(core, request)
+    try:
+        return dashboard(core, request)
+    except HTTPException as exc:
+        if exc.status_code in {401, 403}:
+            return RedirectResponse("/admin/login", status_code=303)
+        raise
 
 
 async def suite_message(request: Request):
