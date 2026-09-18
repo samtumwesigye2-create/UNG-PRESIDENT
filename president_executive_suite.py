@@ -515,7 +515,7 @@ def security_page(request: Request):
         recovery_left = cur.fetchone()["n"]
     recovery_html = f'''<section class="panel"><h3>Recovery Codes</h3><p style="color:#aebdcb;font-size:13px">Single-use backup codes for MFA recovery. Remaining: <strong>{recovery_left}</strong></p><form method="post" action="/executive/security/recovery-codes"><button>Generate New Recovery Codes</button></form><p style="font-size:11px;color:#7f91a2">Generating a new set revokes all unused old codes.</p></section>'''
     body=f"""<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h2>Executive <span class="gold">Security</span></h2><p>Manage your principal-only credential independently from Staff Portal accounts.</p></div></div></section>
-<div class="two"><section class="panel"><h3>Change Executive Password</h3><form method="post" action="/executive/security/password"><label>Current password</label><input type="password" name="current_password" autocomplete="current-password" required><label>New password</label><input type="password" name="new_password" minlength="14" autocomplete="new-password" required><label>Confirm new password</label><input type="password" name="confirm_password" minlength="14" autocomplete="new-password" required><button>Update Executive Password</button></form></section>
+<div class="two"><section class="panel"><h3>Set / Change Executive Password</h3><form method="post" action="/executive/security/password"><label>Current password or one-time executive setup code</label><input type="password" name="current_password" autocomplete="current-password" required><p style="font-size:11px;color:#7f91a2;margin-top:-4px">For initial presidential setup, the one-time Executive Setup Code may be used instead of the temporary password.</p><label>New password</label><input type="password" name="new_password" minlength="14" autocomplete="new-password" required><label>Confirm new password</label><input type="password" name="confirm_password" minlength="14" autocomplete="new-password" required><button>Update Executive Password</button></form></section>
 <section class="panel"><h3>Session Protection</h3><p style="color:#aebdcb;font-size:13px">Executive Portal sessions are isolated from Staff Portal sessions and expire automatically. Use Secure Logout when leaving a principal device.</p><table><tr><th>Principal</th><td>{escape(_title(user["role"]))}</td></tr><tr><th>Username</th><td>{escape(user["username"])}</td></tr><tr><th>Session lifetime</th><td>8 hours maximum</td></tr><tr><th>Cookie</th><td>HTTP-only · SameSite Strict · Secure in production</td></tr></table></section>{mfa_html}{recovery_html}</div>"""
     return _shell(user, body)
 
@@ -535,8 +535,11 @@ async def change_executive_password(request: Request):
     with core.db_cursor() as cur:
         cur.execute("SELECT * FROM executive_principal_accounts WHERE id=?", (user["account_id"],))
         row = cur.fetchone()
-    if not row or not _verify_password(current, row["password_hash"], row["salt"]):
-        raise HTTPException(status_code=403, detail="Current password is incorrect")
+    setup_code = os.environ.get("UNG_EXECUTIVE_SETUP_CODE", "")
+    current_ok = bool(row) and _verify_password(current, row["password_hash"], row["salt"])
+    bootstrap_ok = bool(row) and user["role"] == "president" and bool(setup_code) and hmac.compare_digest(current.strip(), setup_code.strip())
+    if not current_ok and not bootstrap_ok:
+        raise HTTPException(status_code=403, detail="Current password or executive setup code is incorrect")
     salt = secrets.token_hex(16)
     with core.db_cursor(commit=True) as cur:
         cur.execute("UPDATE executive_principal_accounts SET password_hash=?, salt=? WHERE id=?",
