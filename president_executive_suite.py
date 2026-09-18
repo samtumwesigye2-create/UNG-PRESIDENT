@@ -154,6 +154,13 @@ def init_schema():
             expires_at TEXT NOT NULL,
             used_at TEXT
         )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS executive_recovery_codes(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            code_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            used_at TEXT
+        )""")
 
 
 def seed_principal_accounts_from_env():
@@ -237,7 +244,7 @@ def executive_mfa_form(request: Request):
     if not challenge:
         return RedirectResponse("/executive/login?error=MFA+challenge+expired", status_code=303)
     return HTMLResponse("""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Executive MFA</title>
-<style>body{font-family:Arial;background:#071522;color:#fff;display:grid;place-items:center;min-height:100vh}.b{width:min(420px,92vw);background:#0c2033;padding:28px;border:1px solid #385069;border-radius:14px}input{width:100%;padding:13px;margin:8px 0 14px;box-sizing:border-box;font-size:22px;letter-spacing:5px;text-align:center}button{padding:12px;width:100%;background:#caa84b;border:0;font-weight:bold}</style></head><body><div class="b"><h2>Executive MFA Verification</h2><p>Enter the 6-digit code from your authenticator app.</p><form method="post" action="/executive/mfa"><input inputmode="numeric" pattern="[0-9]{6}" maxlength="6" name="code" required autofocus><button>Verify & Enter</button></form></div></body></html>""")
+<style>body{font-family:Arial;background:#071522;color:#fff;display:grid;place-items:center;min-height:100vh}.b{width:min(420px,92vw);background:#0c2033;padding:28px;border:1px solid #385069;border-radius:14px}input{width:100%;padding:13px;margin:8px 0 14px;box-sizing:border-box;font-size:22px;letter-spacing:5px;text-align:center}button{padding:12px;width:100%;background:#caa84b;border:0;font-weight:bold}</style></head><body><div class="b"><h2>Executive MFA Verification</h2><p>Enter the 6-digit code from your authenticator app.</p><form method="post" action="/executive/mfa"><input inputmode="numeric" pattern="[0-9]{6}" maxlength="6" name="code" required autofocus><button>Verify & Enter</button></form><hr style="border-color:#294158;margin:22px 0"><p style="font-size:12px;color:#aebdcb">Lost access to your authenticator?</p><form method="post" action="/executive/mfa/recovery"><input name="recovery_code" placeholder="One-time recovery code" required style="letter-spacing:1px;font-size:16px"><button>Use Recovery Code</button></form></div></body></html>""")
 
 
 def executive_mfa_verify(request: Request, code: str = Form(...)):
@@ -255,6 +262,31 @@ def executive_mfa_verify(request: Request, code: str = Form(...)):
         cur.execute("UPDATE executive_principal_accounts SET last_login=? WHERE id=?", (datetime.utcnow().isoformat(), row["id"]))
     core.log_action(None, row["username"], "executive_portal_login_mfa", "executive_principal_accounts", row["id"])
     response = RedirectResponse("/executive", status_code=303)
+    response.set_cookie(EXEC_COOKIE, _token(row["id"], row["username"], row["role"]), httponly=True, samesite="strict", secure=bool(os.environ.get("RAILWAY_ENVIRONMENT_ID")), max_age=EXEC_MAX_AGE, path="/")
+    response.delete_cookie("executive_mfa_challenge", path="/")
+    return response
+
+
+
+def executive_mfa_recovery(request: Request, recovery_code: str = Form(...)):
+    challenge = _verify_mfa_challenge(request.cookies.get("executive_mfa_challenge",""))
+    if not challenge:
+        return RedirectResponse("/executive/login?error=MFA+challenge+expired", status_code=303)
+    code_hash = _hash_recovery_code(recovery_code.strip().upper())
+    with core.db_cursor() as cur:
+        cur.execute("SELECT * FROM executive_principal_accounts WHERE id=?", (challenge["account_id"],))
+        row = cur.fetchone()
+        cur.execute("SELECT * FROM executive_recovery_codes WHERE account_id=? AND code_hash=? AND used_at IS NULL",
+                    (challenge["account_id"], code_hash))
+        rc = cur.fetchone()
+    if not row or not rc:
+        return RedirectResponse("/executive/mfa?error=Invalid+recovery+code", status_code=303)
+    now = datetime.utcnow().isoformat()
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("UPDATE executive_recovery_codes SET used_at=? WHERE id=? AND used_at IS NULL", (now, rc["id"]))
+        cur.execute("UPDATE executive_principal_accounts SET last_login=? WHERE id=?", (now, row["id"]))
+    core.log_action(None, row["username"], "executive_portal_login_recovery_code", "executive_principal_accounts", row["id"])
+    response = RedirectResponse("/executive/security", status_code=303)
     response.set_cookie(EXEC_COOKIE, _token(row["id"], row["username"], row["role"]), httponly=True, samesite="strict", secure=bool(os.environ.get("RAILWAY_ENVIRONMENT_ID")), max_age=EXEC_MAX_AGE, path="/")
     response.delete_cookie("executive_mfa_challenge", path="/")
     return response
@@ -370,6 +402,15 @@ async def create_meeting(request: Request):
 
 
 
+
+def _hash_recovery_code(code: str) -> str:
+    return hmac.new(core.SECRET_KEY.encode(), ("exec-recovery|" + code).encode(), hashlib.sha256).hexdigest()
+
+
+def _new_recovery_codes(count: int = 8):
+    return ["RC-" + "-".join(secrets.token_hex(2).upper() for _ in range(2)) for _ in range(count)]
+
+
 def _hash_enrollment_code(code: str) -> str:
     return hmac.new(core.SECRET_KEY.encode(), ("exec-enroll|" + code).encode(), hashlib.sha256).hexdigest()
 
@@ -469,9 +510,13 @@ def security_page(request: Request):
         qr.save(buf, format="PNG")
         qr_b64 = base64.b64encode(buf.getvalue()).decode()
         mfa_html = f'''<section class="panel"><h3>Authenticator MFA</h3><p style="color:#aebdcb;font-size:13px">Scan this QR code with an authenticator app, then enter the current 6-digit code to enable MFA.</p><div style="text-align:center"><img src="data:image/png;base64,{qr_b64}" alt="MFA QR code" style="width:190px;height:190px;background:white;padding:8px;border-radius:10px"></div><p style="font:12px monospace;word-break:break-all;color:#d9bb62">{escape(secret)}</p><form method="post" action="/executive/security/mfa/enable"><label>6-digit code</label><input name="code" inputmode="numeric" pattern="[0-9]{{6}}" maxlength="6" required><button>Enable MFA</button></form></section>'''
+    with core.db_cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM executive_recovery_codes WHERE account_id=? AND used_at IS NULL", (user["account_id"],))
+        recovery_left = cur.fetchone()["n"]
+    recovery_html = f'''<section class="panel"><h3>Recovery Codes</h3><p style="color:#aebdcb;font-size:13px">Single-use backup codes for MFA recovery. Remaining: <strong>{recovery_left}</strong></p><form method="post" action="/executive/security/recovery-codes"><button>Generate New Recovery Codes</button></form><p style="font-size:11px;color:#7f91a2">Generating a new set revokes all unused old codes.</p></section>'''
     body=f"""<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h2>Executive <span class="gold">Security</span></h2><p>Manage your principal-only credential independently from Staff Portal accounts.</p></div></div></section>
 <div class="two"><section class="panel"><h3>Change Executive Password</h3><form method="post" action="/executive/security/password"><label>Current password</label><input type="password" name="current_password" autocomplete="current-password" required><label>New password</label><input type="password" name="new_password" minlength="14" autocomplete="new-password" required><label>Confirm new password</label><input type="password" name="confirm_password" minlength="14" autocomplete="new-password" required><button>Update Executive Password</button></form></section>
-<section class="panel"><h3>Session Protection</h3><p style="color:#aebdcb;font-size:13px">Executive Portal sessions are isolated from Staff Portal sessions and expire automatically. Use Secure Logout when leaving a principal device.</p><table><tr><th>Principal</th><td>{escape(_title(user["role"]))}</td></tr><tr><th>Username</th><td>{escape(user["username"])}</td></tr><tr><th>Session lifetime</th><td>8 hours maximum</td></tr><tr><th>Cookie</th><td>HTTP-only · SameSite Strict · Secure in production</td></tr></table></section>{mfa_html}</div>"""
+<section class="panel"><h3>Session Protection</h3><p style="color:#aebdcb;font-size:13px">Executive Portal sessions are isolated from Staff Portal sessions and expire automatically. Use Secure Logout when leaving a principal device.</p><table><tr><th>Principal</th><td>{escape(_title(user["role"]))}</td></tr><tr><th>Username</th><td>{escape(user["username"])}</td></tr><tr><th>Session lifetime</th><td>8 hours maximum</td></tr><tr><th>Cookie</th><td>HTTP-only · SameSite Strict · Secure in production</td></tr></table></section>{mfa_html}{recovery_html}</div>"""
     return _shell(user, body)
 
 
@@ -520,6 +565,24 @@ async def enable_executive_mfa(request: Request):
     return RedirectResponse("/executive/security", status_code=303)
 
 
+
+async def generate_recovery_codes(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    codes = _new_recovery_codes(8)
+    now = datetime.utcnow().isoformat()
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("DELETE FROM executive_recovery_codes WHERE account_id=? AND used_at IS NULL", (user["account_id"],))
+        for code in codes:
+            cur.execute("INSERT INTO executive_recovery_codes(account_id,code_hash,created_at) VALUES(?,?,?)",
+                        (user["account_id"], _hash_recovery_code(code), now))
+    core.log_action(None, user["username"], "executive_recovery_codes_generated", "executive_principal_accounts", user["account_id"])
+    code_html = "".join(f"<li style='font:700 20px monospace;color:#f0d37b;margin:8px 0'>{escape(code)}</li>" for code in codes)
+    body=f"""<section class="hero"><h2>New <span class="gold">Recovery Codes</span></h2><p>Save these codes now. Each can be used once and they will not be shown again.</p></section><section class="panel" style="margin-top:16px"><ol style="columns:2;list-style-position:inside">{code_html}</ol><p style="color:#ffcf7a">Store these somewhere secure and separate from your authenticator device.</p><a href="/executive/security" style="color:#d9bb62">Return to Security</a></section>"""
+    return _shell(user, body)
+
+
 def legacy_redirect():
     return RedirectResponse("/executive", status_code=303)
 
@@ -527,13 +590,14 @@ def legacy_redirect():
 def apply_executive_suite(_core=None):
     init_schema()
     seed_principal_accounts_from_env()
-    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/mfa","/admin/executive-suite"}
+    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login_form, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login, methods=["POST"])
     core.app.add_api_route("/executive/mfa", executive_mfa_form, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/mfa", executive_mfa_verify, methods=["POST"])
+    core.app.add_api_route("/executive/mfa/recovery", executive_mfa_recovery, methods=["POST"])
     core.app.add_api_route("/executive/logout", executive_logout, methods=["GET"])
     core.app.add_api_route("/executive/setup", setup_form, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/setup", setup_submit, methods=["POST"])
@@ -547,5 +611,6 @@ def apply_executive_suite(_core=None):
     core.app.add_api_route("/executive/security", security_page, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/security/password", change_executive_password, methods=["POST"])
     core.app.add_api_route("/executive/security/mfa/enable", enable_executive_mfa, methods=["POST"])
+    core.app.add_api_route("/executive/security/recovery-codes", generate_recovery_codes, methods=["POST"], response_class=HTMLResponse)
     core.app.add_api_route("/admin/executive-suite", legacy_redirect, methods=["GET"])
     return True
