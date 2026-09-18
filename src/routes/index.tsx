@@ -12,7 +12,7 @@ const PRESIDENTIAL_STANDARD = 'https://assets.macaly-user-data.dev/cdn-cgi/image
 const PRESIDENTIAL_SEAL = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cMhdH8PnCuRMUuhn-17ua.png'
 const HERO_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/0GNEy1EzABEvWsyoKN8b2.jpeg'
 const VICE_PRESIDENTIAL_STANDARD = '/static/images/vice-presidential-standard.jpg'
-const VICE_PRESIDENTIAL_SEAL = '/static/images/vice-presidential-standard.jpg'
+const VICE_PRESIDENTIAL_SEAL = '/static/images/7B98271E-513C-406F-912D-A9C0B37D1A91.png'
 const CEREMONIAL_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cX1jvSh2aF8KtsBomeaSg.jpeg'
 
 export function PresidentHome() {
