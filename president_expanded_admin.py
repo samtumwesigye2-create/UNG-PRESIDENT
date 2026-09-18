@@ -85,6 +85,7 @@ def expanded_dashboard(request: Request):
     user = _user(request)
     cards = "".join(f'<a class="card" href="{path}"><strong>{escape(label)}</strong><p>Open module</p></a>' for label, path, _ in MODULES)
     old = [
+        ("Digital Executive Suite","/admin/executive-suite"),
         ("Executive Orders","/admin/executive-orders"),("Appointments","/admin/appointments"),("National Honours","/admin/honours"),("Events & Protocol","/admin/events"),("Visit Requests","/admin/visit-requests"),("Citizen Petitions","/admin/petitions"),("State Visits","/admin/state-visits"),("Press Statements","/admin/press-statements"),("HR Verification Codes","/admin/hr-codes"),("Audit Log","/admin/audit-log")
     ]
     existing = "".join(f'<a class="card" href="{p}"><strong>{escape(l)}</strong></a>' for l,p in old)
