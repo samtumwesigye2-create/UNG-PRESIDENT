@@ -18,6 +18,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, HTMLResponse
 from jinja2 import Environment, DictLoader
 from markupsafe import Markup
@@ -783,6 +784,8 @@ def render_admin(page_title, inner_template, **ctx):
 # APP
 # =================================================================
 app = FastAPI(title="UNG-PRESIDENT")
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
