@@ -334,64 +334,39 @@ def migrate_legacy_executive_records_to_vault(limit_per_table: int = 200):
         summary["failed"] += failed
         summary["tables"][name] = {"migrated": migrated, "failed": failed}
     
-    migrate_table(
-        "messages",
-        "SELECT * FROM executive_secure_messages WHERE vault_object_id IS NULL ORDER BY id LIMIT ?",
-        lambda row: _store_executive_record_in_vault(
-            user={"username": "legacy-migration"},
-            record_type="executive_secure_message",
-            name=f"Executive Communication — {row['subject']}",
-            classification="confidential",
-            protection_profile="VAULT-ENVELOPE",
-            payload={
-                "recipient": row["recipient"],
-                "subject": row["subject"],
-                "priority": row["priority"],
-                "message": _decrypt(row["ciphertext"]),
-                "created_by_account_id": row["created_by"],
-                "created_at": row["created_at"],
-                "legacy_migration": True,
-            },
-        ),
-        "UPDATE executive_secure_messages SET vault_object_id=?, ciphertext='VAULT:'||? WHERE id=?"
-    )
-
-    # Messages need a separate updater because ciphertext is replaced with the reference marker.
     with core.db_cursor() as cur:
         cur.execute("SELECT * FROM executive_secure_messages WHERE vault_object_id IS NULL ORDER BY id LIMIT ?", (limit_per_table,))
         legacy_messages = cur.fetchall()
-    # Remove the earlier generic message result if rows still exist due updater incompatibility.
-    if legacy_messages:
-        summary["migrated"] -= summary["tables"]["messages"]["migrated"]
-        summary["failed"] -= summary["tables"]["messages"]["failed"]
-        mm = mf = 0
-        for row in legacy_messages:
-            try:
-                vault_id = _store_executive_record_in_vault(
-                    user={"username": "legacy-migration"},
-                    record_type="executive_secure_message",
-                    name=f"Executive Communication — {row['subject']}",
-                    classification="confidential",
-                    protection_profile="VAULT-ENVELOPE",
-                    payload={
-                        "recipient": row["recipient"],
-                        "subject": row["subject"],
-                        "priority": row["priority"],
-                        "message": _decrypt(row["ciphertext"]),
-                        "created_by_account_id": row["created_by"],
-                        "created_at": row["created_at"],
-                        "legacy_migration": True,
-                    },
+    mm = mf = 0
+    for row in legacy_messages:
+        try:
+            vault_id = _store_executive_record_in_vault(
+                user={"username": "legacy-migration"},
+                record_type="executive_secure_message",
+                name=f"Executive Communication — {row['subject']}",
+                classification="confidential",
+                protection_profile="VAULT-ENVELOPE",
+                payload={
+                    "recipient": row["recipient"],
+                    "subject": row["subject"],
+                    "priority": row["priority"],
+                    "message": _decrypt(row["ciphertext"]),
+                    "created_by_account_id": row["created_by"],
+                    "created_at": row["created_at"],
+                    "legacy_migration": True,
+                },
+            )
+            with core.db_cursor(commit=True) as cur:
+                cur.execute(
+                    "UPDATE executive_secure_messages SET vault_object_id=?, ciphertext=? WHERE id=?",
+                    (vault_id, "VAULT:" + vault_id, row["id"]),
                 )
-                with core.db_cursor(commit=True) as cur:
-                    cur.execute("UPDATE executive_secure_messages SET vault_object_id=?, ciphertext=? WHERE id=?",
-                                (vault_id, "VAULT:" + vault_id, row["id"]))
-                mm += 1
-            except Exception:
-                mf += 1
-        summary["tables"]["messages"] = {"migrated": mm, "failed": mf}
-        summary["migrated"] += mm
-        summary["failed"] += mf
+            mm += 1
+        except Exception:
+            mf += 1
+    summary["tables"]["messages"] = {"migrated": mm, "failed": mf}
+    summary["migrated"] += mm
+    summary["failed"] += mf
 
     migrate_table(
         "archive",
