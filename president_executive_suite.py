@@ -5,10 +5,13 @@ import hmac
 import os
 import secrets
 import time
+import io
 from datetime import datetime
 from html import escape
 
 from cryptography.fernet import Fernet, InvalidToken
+import pyotp
+import qrcode
 from fastapi import Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -57,6 +60,31 @@ def _verify_token(token: str):
         return None
 
 
+
+def _mfa_challenge_token(account_id: int, username: str) -> str:
+    issued = int(time.time())
+    payload = f"executive-mfa|{account_id}|{username}|{issued}"
+    sig = hmac.new(core.SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return base64.urlsafe_b64encode(f"{payload}|{sig}".encode()).decode()
+
+
+def _verify_mfa_challenge(token: str):
+    try:
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
+        purpose, account_id, username, issued, sig = raw.split("|")
+        if purpose != "executive-mfa":
+            return None
+        payload = f"{purpose}|{account_id}|{username}|{issued}"
+        expected = hmac.new(core.SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        if int(time.time()) - int(issued) > 300:
+            return None
+        return {"account_id": int(account_id), "username": username}
+    except Exception:
+        return None
+
+
 def _principal(request: Request):
     token = request.cookies.get(EXEC_COOKIE)
     user = _verify_token(token) if token else None
@@ -75,8 +103,18 @@ def init_schema():
             role TEXT NOT NULL,
             full_name TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            last_login TEXT
+            last_login TEXT,
+            mfa_secret TEXT,
+            mfa_enabled INTEGER NOT NULL DEFAULT 0
         )""")
+        for ddl in (
+            "ALTER TABLE executive_principal_accounts ADD COLUMN mfa_secret TEXT",
+            "ALTER TABLE executive_principal_accounts ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0",
+        ):
+            try:
+                cur.execute(ddl)
+            except Exception:
+                pass
         cur.execute("""CREATE TABLE IF NOT EXISTS executive_secure_messages(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             recipient TEXT NOT NULL,
@@ -172,11 +210,53 @@ def executive_login(request: Request, username: str = Form(...), password: str =
         row = cur.fetchone()
     if not row or row["role"] not in EXEC_ROLES or not _verify_password(password, row["password_hash"], row["salt"]):
         return RedirectResponse("/executive/login?error=Invalid+executive+credentials", status_code=303)
+    if row["mfa_enabled"]:
+        response = RedirectResponse("/executive/mfa", status_code=303)
+        response.set_cookie(
+            "executive_mfa_challenge",
+            _mfa_challenge_token(row["id"], row["username"]),
+            httponly=True,
+            samesite="strict",
+            secure=bool(os.environ.get("RAILWAY_ENVIRONMENT_ID")),
+            max_age=300,
+            path="/",
+        )
+        return response
     with core.db_cursor(commit=True) as cur:
         cur.execute("UPDATE executive_principal_accounts SET last_login=? WHERE id=?", (datetime.utcnow().isoformat(), row["id"]))
     core.log_action(None, row["username"], "executive_portal_login", "executive_principal_accounts", row["id"])
+    token = _token(row["id"], row["username"], row["role"])
+    response = RedirectResponse("/executive", status_code=303)
+    response.set_cookie(EXEC_COOKIE, token, httponly=True, samesite="strict", secure=bool(os.environ.get("RAILWAY_ENVIRONMENT_ID")), max_age=EXEC_MAX_AGE, path="/")
+    return response
+
+
+
+def executive_mfa_form(request: Request):
+    challenge = _verify_mfa_challenge(request.cookies.get("executive_mfa_challenge",""))
+    if not challenge:
+        return RedirectResponse("/executive/login?error=MFA+challenge+expired", status_code=303)
+    return HTMLResponse("""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Executive MFA</title>
+<style>body{font-family:Arial;background:#071522;color:#fff;display:grid;place-items:center;min-height:100vh}.b{width:min(420px,92vw);background:#0c2033;padding:28px;border:1px solid #385069;border-radius:14px}input{width:100%;padding:13px;margin:8px 0 14px;box-sizing:border-box;font-size:22px;letter-spacing:5px;text-align:center}button{padding:12px;width:100%;background:#caa84b;border:0;font-weight:bold}</style></head><body><div class="b"><h2>Executive MFA Verification</h2><p>Enter the 6-digit code from your authenticator app.</p><form method="post" action="/executive/mfa"><input inputmode="numeric" pattern="[0-9]{6}" maxlength="6" name="code" required autofocus><button>Verify & Enter</button></form></div></body></html>""")
+
+
+def executive_mfa_verify(request: Request, code: str = Form(...)):
+    challenge = _verify_mfa_challenge(request.cookies.get("executive_mfa_challenge",""))
+    if not challenge:
+        return RedirectResponse("/executive/login?error=MFA+challenge+expired", status_code=303)
+    with core.db_cursor() as cur:
+        cur.execute("SELECT * FROM executive_principal_accounts WHERE id=?", (challenge["account_id"],))
+        row = cur.fetchone()
+    if not row or not row["mfa_enabled"] or not row["mfa_secret"]:
+        return RedirectResponse("/executive/login?error=MFA+not+configured", status_code=303)
+    if not pyotp.TOTP(row["mfa_secret"]).verify(code.strip(), valid_window=1):
+        return RedirectResponse("/executive/mfa?error=Invalid+code", status_code=303)
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("UPDATE executive_principal_accounts SET last_login=? WHERE id=?", (datetime.utcnow().isoformat(), row["id"]))
+    core.log_action(None, row["username"], "executive_portal_login_mfa", "executive_principal_accounts", row["id"])
     response = RedirectResponse("/executive", status_code=303)
     response.set_cookie(EXEC_COOKIE, _token(row["id"], row["username"], row["role"]), httponly=True, samesite="strict", secure=bool(os.environ.get("RAILWAY_ENVIRONMENT_ID")), max_age=EXEC_MAX_AGE, path="/")
+    response.delete_cookie("executive_mfa_challenge", path="/")
     return response
 
 
@@ -372,9 +452,26 @@ def security_page(request: Request):
     user = _principal(request)
     if not user:
         return RedirectResponse("/executive/login", status_code=303)
+    with core.db_cursor() as cur:
+        cur.execute("SELECT * FROM executive_principal_accounts WHERE id=?", (user["account_id"],))
+        account = cur.fetchone()
+    mfa_html = ""
+    if account["mfa_enabled"]:
+        mfa_html = '<section class="panel"><h3>Authenticator MFA</h3><p style="color:#8fd2a8">Enabled</p><p style="color:#aebdcb;font-size:13px">A 6-digit authenticator code is required after your password.</p></section>'
+    else:
+        secret = account["mfa_secret"] or pyotp.random_base32()
+        if not account["mfa_secret"]:
+            with core.db_cursor(commit=True) as cur:
+                cur.execute("UPDATE executive_principal_accounts SET mfa_secret=? WHERE id=?", (secret, user["account_id"]))
+        uri = pyotp.TOTP(secret).provisioning_uri(name=user["username"], issuer_name="UNG-PRESIDENT Executive")
+        qr = qrcode.make(uri)
+        buf = io.BytesIO()
+        qr.save(buf, format="PNG")
+        qr_b64 = base64.b64encode(buf.getvalue()).decode()
+        mfa_html = f'''<section class="panel"><h3>Authenticator MFA</h3><p style="color:#aebdcb;font-size:13px">Scan this QR code with an authenticator app, then enter the current 6-digit code to enable MFA.</p><div style="text-align:center"><img src="data:image/png;base64,{qr_b64}" alt="MFA QR code" style="width:190px;height:190px;background:white;padding:8px;border-radius:10px"></div><p style="font:12px monospace;word-break:break-all;color:#d9bb62">{escape(secret)}</p><form method="post" action="/executive/security/mfa/enable"><label>6-digit code</label><input name="code" inputmode="numeric" pattern="[0-9]{{6}}" maxlength="6" required><button>Enable MFA</button></form></section>'''
     body=f"""<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h2>Executive <span class="gold">Security</span></h2><p>Manage your principal-only credential independently from Staff Portal accounts.</p></div></div></section>
 <div class="two"><section class="panel"><h3>Change Executive Password</h3><form method="post" action="/executive/security/password"><label>Current password</label><input type="password" name="current_password" autocomplete="current-password" required><label>New password</label><input type="password" name="new_password" minlength="14" autocomplete="new-password" required><label>Confirm new password</label><input type="password" name="confirm_password" minlength="14" autocomplete="new-password" required><button>Update Executive Password</button></form></section>
-<section class="panel"><h3>Session Protection</h3><p style="color:#aebdcb;font-size:13px">Executive Portal sessions are isolated from Staff Portal sessions and expire automatically. Use Secure Logout when leaving a principal device.</p><table><tr><th>Principal</th><td>{escape(_title(user["role"]))}</td></tr><tr><th>Username</th><td>{escape(user["username"])}</td></tr><tr><th>Session lifetime</th><td>8 hours maximum</td></tr><tr><th>Cookie</th><td>HTTP-only · SameSite Strict · Secure in production</td></tr></table></section></div>"""
+<section class="panel"><h3>Session Protection</h3><p style="color:#aebdcb;font-size:13px">Executive Portal sessions are isolated from Staff Portal sessions and expire automatically. Use Secure Logout when leaving a principal device.</p><table><tr><th>Principal</th><td>{escape(_title(user["role"]))}</td></tr><tr><th>Username</th><td>{escape(user["username"])}</td></tr><tr><th>Session lifetime</th><td>8 hours maximum</td></tr><tr><th>Cookie</th><td>HTTP-only · SameSite Strict · Secure in production</td></tr></table></section>{mfa_html}</div>"""
     return _shell(user, body)
 
 
@@ -405,6 +502,24 @@ async def change_executive_password(request: Request):
     return response
 
 
+
+async def enable_executive_mfa(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    form = await request.form()
+    code = str(form.get("code","")).strip()
+    with core.db_cursor() as cur:
+        cur.execute("SELECT * FROM executive_principal_accounts WHERE id=?", (user["account_id"],))
+        row = cur.fetchone()
+    if not row or not row["mfa_secret"] or not pyotp.TOTP(row["mfa_secret"]).verify(code, valid_window=1):
+        raise HTTPException(status_code=400, detail="Invalid authenticator code")
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("UPDATE executive_principal_accounts SET mfa_enabled=1 WHERE id=?", (user["account_id"],))
+    core.log_action(None, user["username"], "executive_mfa_enabled", "executive_principal_accounts", user["account_id"])
+    return RedirectResponse("/executive/security", status_code=303)
+
+
 def legacy_redirect():
     return RedirectResponse("/executive", status_code=303)
 
@@ -412,11 +527,13 @@ def legacy_redirect():
 def apply_executive_suite(_core=None):
     init_schema()
     seed_principal_accounts_from_env()
-    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/security","/executive/security/password","/admin/executive-suite"}
+    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/mfa","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login_form, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login, methods=["POST"])
+    core.app.add_api_route("/executive/mfa", executive_mfa_form, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/mfa", executive_mfa_verify, methods=["POST"])
     core.app.add_api_route("/executive/logout", executive_logout, methods=["GET"])
     core.app.add_api_route("/executive/setup", setup_form, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/setup", setup_submit, methods=["POST"])
@@ -429,5 +546,6 @@ def apply_executive_suite(_core=None):
     core.app.add_api_route("/executive/enroll", enrollment_submit, methods=["POST"])
     core.app.add_api_route("/executive/security", security_page, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/security/password", change_executive_password, methods=["POST"])
+    core.app.add_api_route("/executive/security/mfa/enable", enable_executive_mfa, methods=["POST"])
     core.app.add_api_route("/admin/executive-suite", legacy_redirect, methods=["GET"])
     return True
