@@ -352,6 +352,70 @@ tr:hover{background:#faf8f0;}
 .reg-steps{display:flex;justify-content:space-between;max-width:480px;margin:0 auto 24px;font-family:Arial,sans-serif;font-size:12px;color:var(--muted);}
 .reg-steps span.active{color:var(--navy);font-weight:bold;}
 .hint{font-family:Arial,sans-serif;font-size:12px;color:var(--muted);margin:-10px 0 16px;}
+
+/* Presidential command-style public homepage */
+body{font-family:Arial,Helvetica,sans-serif;background:#eef2f6;color:#13233a}
+.site-header{background:linear-gradient(90deg,#061a31,#0a2d52);border-bottom:2px solid #d6aa32;box-shadow:0 2px 12px rgba(0,0,0,.2)}
+.header-inner{max-width:1440px;padding:12px 28px;gap:22px;flex-wrap:nowrap}
+.brand{min-width:340px;gap:16px}
+.seal-img{width:72px;height:72px;box-shadow:0 0 0 2px #d6aa32}
+.brand-copy{display:flex;flex-direction:column;line-height:1.1}
+.brand-title{font-family:Georgia,'Times New Roman',serif;font-size:28px;color:#fff;letter-spacing:1.5px}
+.brand-sub{font-size:12px;color:#e0bd56;letter-spacing:3px;margin-top:6px}
+.main-nav{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:1}
+.main-nav a{margin:0;padding:10px 12px;border-bottom:3px solid transparent;color:#e9eff5;font-size:13px;white-space:nowrap}
+.main-nav a:hover{color:#fff;border-bottom-color:#d6aa32;background:rgba(255,255,255,.04)}
+.staff-link{border:1px solid rgba(214,170,50,.8)!important;border-radius:6px}
+.pres-hero{position:relative;overflow:hidden;background:
+radial-gradient(circle at 78% 30%,rgba(214,170,50,.13),transparent 30%),
+linear-gradient(115deg,#08213e 0%,#0c3157 58%,#102944 100%);color:#fff;padding:50px 38px 88px;border-bottom:1px solid rgba(255,255,255,.1)}
+.pres-hero-inner{max-width:1360px;margin:0 auto}
+.pres-kicker{font-size:13px;letter-spacing:3px;color:#e0bd56;text-transform:uppercase;font-weight:700;margin-bottom:12px}
+.pres-hero h1{font-family:Georgia,'Times New Roman',serif;font-size:48px;line-height:1.02;margin:0 0 12px;max-width:760px}
+.pres-hero h1 span{color:#f0bd3c}
+.pres-hero p{font-size:19px;color:#d8e2ec;margin:0;max-width:720px}
+.quick-actions{max-width:1360px;margin:-48px auto 0;padding:0 30px;position:relative;z-index:3;display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
+.quick-card{min-height:116px;border-radius:10px;padding:20px 14px;text-align:center;color:#fff;text-decoration:none;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:0 8px 22px rgba(10,30,55,.18);transition:transform .15s ease}
+.quick-card:hover{transform:translateY(-3px)}
+.quick-card .qicon{font-size:27px;margin-bottom:8px}
+.quick-card .qlabel{font-weight:700;font-size:14px;line-height:1.15}
+.q1{background:linear-gradient(135deg,#0a58b6,#164184)}
+.q2{background:linear-gradient(135deg,#13894f,#2b9b62)}
+.q3{background:linear-gradient(135deg,#6d45aa,#8b5cc2)}
+.q4{background:linear-gradient(135deg,#d77b14,#eb9628)}
+.q5{background:linear-gradient(135deg,#0d8a96,#32a2aa)}
+.q6{background:linear-gradient(135deg,#b92f43,#d14c5e)}
+.metric-strip{max-width:1360px;margin:18px auto 0;padding:0 30px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.metric-card{background:#fff;border:1px solid #dbe3eb;border-radius:10px;padding:18px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(9,35,61,.08)}
+.metric-icon{width:46px;height:46px;border-radius:9px;background:#eef3f8;display:flex;align-items:center;justify-content:center;font-size:23px}
+.metric-label{font-size:12px;color:#627083;text-transform:uppercase;letter-spacing:.4px}
+.metric-value{font-size:27px;line-height:1.1;font-weight:800;color:#0b2039;margin-top:2px}
+.public-content{max-width:1360px;margin:18px auto 44px;padding:0 30px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.panel{background:#fff;border:1px solid #dbe3eb;border-radius:10px;overflow:hidden;box-shadow:0 4px 14px rgba(9,35,61,.06)}
+.panel-head{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid #e8edf2}
+.panel-head h2{font-size:18px;margin:0;color:#10243e}
+.panel-head a{font-size:12px;color:#0a58b6;text-decoration:none}
+.list-row{padding:14px 18px;border-bottom:1px solid #eef1f4}
+.list-row:last-child{border-bottom:0}
+.list-row h3{font-size:14px;margin:0 0 4px;color:#0f2540}
+.list-row p{font-size:13px;color:#5e6b7a;margin:0 0 5px;line-height:1.4}
+.list-meta{font-size:11px;color:#8793a1}
+.badge-row{max-width:1360px;margin:18px auto 0;padding:24px 30px;background:transparent;gap:32px}
+.badge-item{max-width:250px}
+.badge-circle{width:210px;height:210px}
+.site-footer{background:#061a31;color:#aeb9c4;padding:24px}
+@media(max-width:1100px){
+ .header-inner{flex-wrap:wrap}.brand{min-width:0}.main-nav{justify-content:flex-start;overflow-x:auto;width:100%}
+ .quick-actions{grid-template-columns:repeat(3,1fr)}.metric-strip{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:700px){
+ .header-inner{padding:10px 14px}.seal-img{width:54px;height:54px}.brand-title{font-size:20px}.brand-sub{font-size:9px;letter-spacing:2px}
+ .pres-hero{padding:34px 20px 76px}.pres-hero h1{font-size:34px}.pres-hero p{font-size:16px}
+ .quick-actions{padding:0 16px;grid-template-columns:repeat(2,1fr);gap:10px}.quick-card{min-height:100px}
+ .metric-strip{padding:0 16px;grid-template-columns:1fr 1fr;gap:10px}.metric-card{padding:14px 12px}.metric-value{font-size:22px}
+ .public-content{padding:0 16px;grid-template-columns:1fr}.badge-row{padding:20px 16px}
+}
+
 """
 BASE = """
 <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
@@ -360,13 +424,16 @@ BASE = """
 <title>{% block title %}Office of the President{% endblock %}</title>
 <style>{{ css }}</style></head><body>
 <header class="site-header"><div class="header-inner">
-  <a href="/" class="brand"><img class="seal-img" src="data:image/png;base64,{{ pres_seal_b64 }}" alt="Presidential Seal"><span>OFFICE OF THE PRESIDENT</span></a>
+  <a href="/" class="brand">
+    <img class="seal-img" src="data:image/png;base64,{{ pres_seal_b64 }}" alt="Presidential Seal">
+    <span class="brand-copy"><span class="brand-title">UNG-PRESIDENT</span><span class="brand-sub">REPUBLIC OF UGANDA</span></span>
+  </a>
   <nav class="main-nav">
     <a href="/">Home</a>
     <a href="/executive-orders">Executive Orders</a>
     <a href="/honours">National Honours</a>
-    <a href="/visit">Schedule a Visit</a>
-    <a href="/petition">Submit a Petition</a>
+    <a href="/visit">Visits</a>
+    <a href="/petition">Petitions</a>
     <a href="/admin/login" class="staff-link">Staff Portal</a>
   </nav>
 </div></header>
@@ -377,7 +444,56 @@ BASE = """
 INDEX = """
 {% extends "base" %}{% block title %}Office of the President — State House{% endblock %}
 {% block content %}
-<section class="hero"><h1>OFFICE OF THE PRESIDENT</h1><p>For Unity, Service and Prosperity</p></section>
+<section class="pres-hero">
+  <div class="pres-hero-inner">
+    <div class="pres-kicker">Office of the President · Republic of Uganda</div>
+    <h1>Leadership. Service.<br><span>A Stronger Uganda.</span></h1>
+    <p>Presidential operations, public services, executive records and citizen engagement from one secure national portal.</p>
+  </div>
+</section>
+
+<div class="quick-actions">
+  <a class="quick-card q1" href="/executive-orders"><span class="qicon">▣</span><span class="qlabel">Executive Orders</span></a>
+  <a class="quick-card q2" href="/honours"><span class="qicon">★</span><span class="qlabel">National Honours</span></a>
+  <a class="quick-card q3" href="/visit"><span class="qicon">⌂</span><span class="qlabel">Schedule a Visit</span></a>
+  <a class="quick-card q4" href="/petition"><span class="qicon">✎</span><span class="qlabel">Submit a Petition</span></a>
+  <a class="quick-card q5" href="#statements"><span class="qicon">☰</span><span class="qlabel">Press Statements</span></a>
+  <a class="quick-card q6" href="/admin/login"><span class="qicon">⚙</span><span class="qlabel">Staff Portal</span></a>
+</div>
+
+<div class="metric-strip">
+  <div class="metric-card"><div class="metric-icon">▣</div><div><div class="metric-label">Executive Orders</div><div class="metric-value">{{ orders|length }}</div></div></div>
+  <div class="metric-card"><div class="metric-icon">☰</div><div><div class="metric-label">Press Statements</div><div class="metric-value">{{ press|length }}</div></div></div>
+  <div class="metric-card"><div class="metric-icon">◆</div><div><div class="metric-label">Public Events</div><div class="metric-value">{{ events|length }}</div></div></div>
+  <div class="metric-card"><div class="metric-icon">★</div><div><div class="metric-label">National Honours</div><div class="metric-value">Official</div></div></div>
+</div>
+
+<div class="public-content">
+  <section class="panel" id="statements">
+    <div class="panel-head"><h2>Press Statements</h2><a href="#statements">Latest</a></div>
+    {% for p in press[:5] %}
+      <div class="list-row"><h3>{{ p.headline }}</h3><p>{{ p.body[:170] }}{% if p.body|length > 170 %}…{% endif %}</p><div class="list-meta">{{ p.published_at }}</div></div>
+    {% else %}<div class="list-row"><p>No press statements published yet.</p></div>{% endfor %}
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Upcoming Public Events</h2><a href="/visit">Visit requests</a></div>
+    {% for e in events[:5] %}
+      <div class="list-row"><h3>{{ e.title }}</h3><p>{{ e.description }}</p><div class="list-meta">{{ e.event_date }} · {{ e.location }}</div></div>
+    {% else %}<div class="list-row"><p>No upcoming public events.</p></div>{% endfor %}
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Recent Executive Orders</h2><a href="/executive-orders">View all →</a></div>
+    {% for o in orders[:5] %}
+      <div class="list-row"><h3>{{ o.order_number }} — {{ o.title }}</h3><p>{{ o.summary }}</p><div class="list-meta">Signed {{ o.signed_date }}</div></div>
+    {% else %}<div class="list-row"><p>No signed executive orders yet.</p></div>{% endfor %}
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Citizen Services</h2></div>
+    <div class="list-row"><h3>Schedule a State House Visit</h3><p>Submit a visit request to the protocol office.</p><a class="btn" href="/visit">Open Visit Request</a></div>
+    <div class="list-row"><h3>Submit a Petition</h3><p>Send a formal petition through the presidential portal.</p><a class="btn btn-gold" href="/petition">Open Petition Form</a></div>
+  </section>
+</div>
+
 <div class="badge-row">
   <div class="badge-item">
     <div class="badge-circle"><img src="data:image/png;base64,{{ nat_flag_b64 }}" alt="National Flag of the Republic of Uganda"></div>
@@ -390,30 +506,6 @@ INDEX = """
   <div class="badge-item">
     <div class="badge-circle"><img src="/static/images/vice-presidential-standard.jpg" alt="Vice Presidential Standard of the Republic of Uganda"></div>
     <h4>VICE PRESIDENTIAL STANDARD</h4><p>Republic of Uganda</p>
-  </div>
-</div>
-<div class="container">
-  <h2 class="section-title">Press Statements</h2>
-  <div class="grid">
-    {% for p in press %}
-    <div class="card"><h3>{{ p.headline }}</h3><p>{{ p.body[:220] }}{% if p.body|length > 220 %}…{% endif %}</p><div class="meta">{{ p.published_at }}</div></div>
-    {% else %}<p>No press statements published yet.</p>{% endfor %}
-  </div>
-  <h2 class="section-title">Upcoming Public Events</h2>
-  <div class="grid">
-    {% for e in events %}
-    <div class="card"><h3>{{ e.title }}</h3><p>{{ e.description }}</p><div class="meta">{{ e.event_date }} &middot; {{ e.location }}</div></div>
-    {% else %}<p>No upcoming public events.</p>{% endfor %}
-  </div>
-  <h2 class="section-title">Recent Executive Orders</h2>
-  <div class="grid">
-    {% for o in orders %}
-    <div class="card"><h3>{{ o.order_number }} — {{ o.title }}</h3><p>{{ o.summary }}</p><div class="meta">Signed {{ o.signed_date }}</div></div>
-    {% else %}<p>No signed executive orders yet.</p>{% endfor %}
-  </div>
-  <div style="text-align:center;margin-top:40px;">
-    <a href="/visit" class="btn btn-gold">Schedule a Visit to State House</a> &nbsp;
-    <a href="/petition" class="btn">Submit a Petition</a>
   </div>
 </div>
 {% endblock %}
