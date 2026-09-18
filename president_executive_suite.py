@@ -8,6 +8,8 @@ from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+import ung_president as core
+
 
 def _fernet(core):
     secret = (core.SECRET_KEY or "development-only").encode()
@@ -182,15 +184,36 @@ async def create_meeting(core, request: Request):
     return RedirectResponse("/admin/executive-suite#meetings",status_code=303)
 
 
-def apply_executive_suite(core):
+def suite_home(request: Request):
+    return dashboard(core, request)
+
+
+async def suite_message(request: Request):
+    return await create_message(core, request)
+
+
+async def suite_archive(request: Request):
+    return await create_archive(core, request)
+
+
+async def suite_meeting(request: Request):
+    return await create_meeting(core, request)
+
+
+def apply_executive_suite(_core=None):
     init_schema(core)
-    def suite_home(request: Request):
-        return dashboard(core, request)
+    owned = {
+        "/admin/executive-suite",
+        "/admin/executive-suite/messages",
+        "/admin/executive-suite/archive",
+        "/admin/executive-suite/meetings",
+    }
+    core.app.router.routes[:] = [
+        r for r in core.app.router.routes
+        if getattr(r, "path", None) not in owned
+    ]
     core.app.add_api_route("/admin/executive-suite", suite_home, methods=["GET"], response_class=HTMLResponse)
-    async def msg(request: Request): return await create_message(core, request)
-    async def arc(request: Request): return await create_archive(core, request)
-    async def mtg(request: Request): return await create_meeting(core, request)
-    core.app.add_api_route("/admin/executive-suite/messages", msg, methods=["POST"])
-    core.app.add_api_route("/admin/executive-suite/archive", arc, methods=["POST"])
-    core.app.add_api_route("/admin/executive-suite/meetings", mtg, methods=["POST"])
+    core.app.add_api_route("/admin/executive-suite/messages", suite_message, methods=["POST"])
+    core.app.add_api_route("/admin/executive-suite/archive", suite_archive, methods=["POST"])
+    core.app.add_api_route("/admin/executive-suite/meetings", suite_meeting, methods=["POST"])
     return True
