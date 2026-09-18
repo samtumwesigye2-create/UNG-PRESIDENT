@@ -24,6 +24,7 @@ EXEC_COOKIE = "executive_session"
 EXEC_MAX_AGE = 60 * 60 * 8
 EXEC_ROLES = {"president", "vice_president", "prime_minister"}
 VAULT_BASE_URL = os.environ.get("UNG_VAULT_BASE_URL", "https://ung-vault-production.up.railway.app").rstrip("/")
+VAULT_INGEST_SECRET = os.environ.get("UNG_VAULT_INGEST_SECRET", "")
 
 
 def _fernet():
@@ -150,7 +151,8 @@ def init_schema():
             ciphertext TEXT NOT NULL,
             priority TEXT NOT NULL DEFAULT 'normal',
             created_by INTEGER,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            vault_object_id TEXT
         )""")
         cur.execute("""CREATE TABLE IF NOT EXISTS executive_archive(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,7 +162,8 @@ def init_schema():
             retention TEXT NOT NULL,
             notes_ciphertext TEXT,
             created_by INTEGER,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            vault_object_id TEXT
         )""")
         cur.execute("""CREATE TABLE IF NOT EXISTS executive_meetings(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,8 +174,18 @@ def init_schema():
             location_mode TEXT NOT NULL,
             notes_ciphertext TEXT,
             created_by INTEGER,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            vault_object_id TEXT
         )""")
+        for ddl in (
+            "ALTER TABLE executive_secure_messages ADD COLUMN vault_object_id TEXT",
+            "ALTER TABLE executive_archive ADD COLUMN vault_object_id TEXT",
+            "ALTER TABLE executive_meetings ADD COLUMN vault_object_id TEXT",
+        ):
+            try:
+                cur.execute(ddl)
+            except Exception:
+                pass
         cur.execute("""CREATE TABLE IF NOT EXISTS executive_enrollment_codes(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code_hash TEXT UNIQUE NOT NULL,
@@ -221,6 +234,43 @@ def seed_principal_accounts_from_env():
                 "INSERT INTO executive_principal_accounts(username,password_hash,salt,role,full_name,created_at) VALUES(?,?,?,?,?,?)",
                 (username, _hash_password(password, salt), salt, role, full_name, datetime.utcnow().isoformat()),
             )
+
+
+def _store_executive_record_in_vault(*, user, record_type: str, name: str, payload: dict,
+                                     classification: str = "confidential",
+                                     protection_profile: str = "VAULT-ENVELOPE") -> str:
+    if not VAULT_INGEST_SECRET:
+        raise HTTPException(status_code=503, detail="Secure VAULT record storage is not configured")
+    body = {
+        "record_type": record_type,
+        "name": name,
+        "principal": user["username"],
+        "classification": classification,
+        "protection_profile": protection_profile,
+        "payload": payload,
+    }
+    raw = json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    signature = hmac.new(VAULT_INGEST_SECRET.encode("utf-8"), raw, hashlib.sha256).hexdigest()
+    req = urllib.request.Request(
+        VAULT_BASE_URL + "/vault/integrations/president/records",
+        data=raw,
+        headers={
+            "Content-Type": "application/json",
+            "X-UNG-PRESIDENT-Signature": signature,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=503, detail=f"VAULT rejected executive record storage ({exc.code})") from None
+    except Exception:
+        raise HTTPException(status_code=503, detail="VAULT unavailable; executive record was not saved") from None
+    object_id = str(result.get("id") or "")
+    if not object_id:
+        raise HTTPException(status_code=503, detail="VAULT did not return a protected object reference")
+    return object_id
 
 
 def _vault_health():
@@ -407,53 +457,133 @@ def dashboard(request: Request):
     user = _principal(request)
     if not user:
         return RedirectResponse("/executive/login", status_code=303)
-    f = _fernet()
     with core.db_cursor() as cur:
         cur.execute("SELECT * FROM executive_secure_messages ORDER BY id DESC LIMIT 8"); messages=cur.fetchall()
         cur.execute("SELECT * FROM executive_archive ORDER BY id DESC LIMIT 8"); archive=cur.fetchall()
         cur.execute("SELECT * FROM executive_meetings ORDER BY id DESC LIMIT 8"); meetings=cur.fetchall()
-    msg_rows="".join(f"<tr><td>{r['id']}</td><td>{escape(r['recipient'])}</td><td>{escape(r['subject'])}</td><td>{escape(r['priority'])}</td><td>{escape(_decrypt(r['ciphertext'])[:120])}</td></tr>" for r in messages) or "<tr><td colspan='5'>No secure messages yet.</td></tr>"
+    msg_rows="".join(f"<tr><td>{r['id']}</td><td>{escape(r['recipient'])}</td><td>{escape(r['subject'])}</td><td>{escape(r['priority'])}</td><td>{escape(r['vault_object_id'] or 'Legacy local record')}</td></tr>" for r in messages) or "<tr><td colspan='5'>No secure messages yet.</td></tr>"
     arc_rows="".join(f"<tr><td>{r['id']}</td><td>{escape(r['title'])}</td><td>{escape(r['category'])}</td><td>{escape(r['retention'])}</td></tr>" for r in archive) or "<tr><td colspan='4'>No archived records yet.</td></tr>"
     mtg_rows="".join(f"<tr><td>{r['id']}</td><td>{escape(r['title'])}</td><td>{escape(r['meeting_type'])}</td><td>{escape(r['scheduled_for'] or '')}</td><td>{escape(r['location_mode'])}</td></tr>" for r in meetings) or "<tr><td colspan='5'>No executive meetings yet.</td></tr>"
     body=f"""<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h2>{escape(_title(user["role"]))} <span class="gold">Executive Workspace</span></h2><p>This is a principal-only portal. Staff Portal sessions are not accepted here.</p></div></div></section>
-<div class="grid"><div class="card"><h3>Secure Vault & SCIF</h3><p>Executive access to UNG-VAULT protected documents, Digital SCIF, encrypted file exchange, redacted sharing and emergency revocation.</p><p><a href="/executive/vault" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Secure Vault →</a></p></div><div class="card"><h3>Executive Security Center</h3><p>Manage permanent credentials, authenticator MFA, and one-time recovery codes.</p><p><a href="/executive/security" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Security Center →</a></p></div><div class="card"><h3>Principal Identity</h3><p>Separate executive account and cookie namespace for the President, Vice President and Prime Minister.</p></div><div class="card"><h3>Encrypted Communications</h3><p>Protected executive messages encrypted before database storage.</p></div><div class="card"><h3>Cloud-First Archive</h3><p>Electronic capture of executive records, references and retention metadata.</p></div><div class="card"><h3>Private Workspace</h3><p>Dedicated digital study for principal-level work.</p></div><div class="card"><h3>Formal Boardroom</h3><p>Plan boardroom, private dining and secure conference sessions.</p></div><div class="card"><h3>Segregated Access</h3><p>Staff accounts cannot authenticate into this portal.</p></div></div>
-<div class="two"><section class="panel" id="comms"><h3>Secure Communications</h3><form method="post" action="/executive/messages"><label>Recipient / channel</label><input name="recipient" required><label>Subject</label><input name="subject" required><label>Priority</label><select name="priority"><option>normal</option><option>high</option><option>urgent</option></select><label>Message</label><textarea name="message" required></textarea><button>Encrypt & Save</button></form><table><tr><th>ID</th><th>Recipient</th><th>Subject</th><th>Priority</th><th>Decrypted view</th></tr>{msg_rows}</table></section>
+<div class="grid"><div class="card"><h3>Secure Vault & SCIF</h3><p>Executive access to UNG-VAULT protected documents, Digital SCIF, encrypted file exchange, redacted sharing and emergency revocation.</p><p><a href="/executive/vault" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Secure Vault →</a></p></div><div class="card"><h3>Executive Security Center</h3><p>Manage permanent credentials, authenticator MFA, and one-time recovery codes.</p><p><a href="/executive/security" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Security Center →</a></p></div><div class="card"><h3>Principal Identity</h3><p>Separate executive account and cookie namespace for the President, Vice President and Prime Minister.</p></div><div class="card"><h3>Encrypted Communications</h3><p>Every executive message is encrypted and stored in UNG-VAULT; the suite retains only its VAULT reference and display metadata.</p></div><div class="card"><h3>Cloud-First Archive</h3><p>Executive records and protected notes are encrypted in UNG-VAULT with local metadata linked to the VAULT object.</p></div><div class="card"><h3>Private Workspace</h3><p>Dedicated digital study for principal-level work.</p></div><div class="card"><h3>Formal Boardroom</h3><p>Plan boardroom, private dining and secure conference sessions.</p></div><div class="card"><h3>Segregated Access</h3><p>Staff accounts cannot authenticate into this portal.</p></div></div>
+<div class="two"><section class="panel" id="comms"><h3>Secure Communications</h3><form method="post" action="/executive/messages"><label>Recipient / channel</label><input name="recipient" required><label>Subject</label><input name="subject" required><label>Priority</label><select name="priority"><option>normal</option><option>high</option><option>urgent</option></select><label>Message</label><textarea name="message" required></textarea><button>Encrypt & Save</button></form><table><tr><th>ID</th><th>Recipient</th><th>Subject</th><th>Priority</th><th>VAULT object</th></tr>{msg_rows}</table></section>
 <section class="panel" id="archive"><h3>Executive Archive</h3><form method="post" action="/executive/archive"><label>Record title</label><input name="title" required><label>Reference</label><input name="record_reference"><label>Category</label><select name="category"><option>Executive Record</option><option>Briefing</option><option>Correspondence</option><option>Meeting Record</option><option>Digital Asset</option></select><label>Retention</label><select name="retention"><option>Permanent</option><option>Presidential Term</option><option>Operational</option></select><label>Protected notes</label><textarea name="notes"></textarea><button>Capture Record</button></form><table><tr><th>ID</th><th>Title</th><th>Category</th><th>Retention</th></tr>{arc_rows}</table></section></div>
 <section class="panel suite-planner" id="meetings" style="margin-top:16px"><h3>Boardroom / Private Suite Planner</h3><p class="intro">Plan executive boardroom sessions, private dining engagements, secure conferences, and principal workspace appointments.</p><form method="post" action="/executive/meetings"><div class="two"><div><label>Title</label><input name="title" required><label>Type</label><select name="meeting_type"><option>Executive Boardroom</option><option>Private Dining</option><option>Presidential Study</option><option>Secure Video Conference</option></select><label>Scheduled for</label><input type="datetime-local" name="scheduled_for"></div><div><label>Guests</label><input name="guests"><label>Location / mode</label><select name="location_mode"><option>Private Boardroom</option><option>Private Dining Room</option><option>Executive Office</option><option>Secure Remote</option></select><label>Protected notes</label><textarea name="notes"></textarea></div></div><button>Schedule Executive Session</button></form><table><tr><th>ID</th><th>Title</th><th>Type</th><th>Scheduled</th><th>Location</th></tr>{mtg_rows}</table></section>"""
     return _shell(user, body)
 
 
 async def create_message(request: Request):
-    user=_principal(request)
-    if not user: return RedirectResponse("/executive/login",303)
-    form=await request.form(); recipient=str(form.get("recipient","")).strip(); subject=str(form.get("subject","")).strip(); message=str(form.get("message","")).strip(); priority=str(form.get("priority","normal")).strip()
-    if not recipient or not subject or not message: raise HTTPException(400,"Required fields missing")
-    token=_fernet().encrypt(message.encode()).decode()
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", 303)
+    form = await request.form()
+    recipient = str(form.get("recipient", "")).strip()
+    subject = str(form.get("subject", "")).strip()
+    message = str(form.get("message", "")).strip()
+    priority = str(form.get("priority", "normal")).strip()
+    if not recipient or not subject or not message:
+        raise HTTPException(400, "Required fields missing")
+    created_at = datetime.utcnow().isoformat()
+    vault_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_secure_message",
+        name=f"Executive Communication — {subject}",
+        classification="confidential",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "recipient": recipient,
+            "subject": subject,
+            "priority": priority,
+            "message": message,
+            "created_by": user["username"],
+            "created_at": created_at,
+        },
+    )
     with core.db_cursor(commit=True) as cur:
-        cur.execute("INSERT INTO executive_secure_messages(recipient,subject,ciphertext,priority,created_by,created_at) VALUES(?,?,?,?,?,?)",(recipient,subject,token,priority,user["account_id"],datetime.utcnow().isoformat()))
-    return RedirectResponse("/executive#comms",303)
+        cur.execute(
+            "INSERT INTO executive_secure_messages(recipient,subject,ciphertext,priority,created_by,created_at,vault_object_id) VALUES(?,?,?,?,?,?,?)",
+            (recipient, subject, "VAULT:" + vault_id, priority, user["account_id"], created_at, vault_id),
+        )
+    core.log_action(None, user["username"], "executive_message_stored_in_vault", "vault_object", vault_id)
+    return RedirectResponse("/executive#comms", 303)
 
 
 async def create_archive(request: Request):
-    user=_principal(request)
-    if not user: return RedirectResponse("/executive/login",303)
-    form=await request.form(); title=str(form.get("title","")).strip(); ref=str(form.get("record_reference","")).strip(); category=str(form.get("category","Executive Record")); retention=str(form.get("retention","Permanent")); notes=str(form.get("notes","")).strip()
-    if not title: raise HTTPException(400,"Title required")
-    cipher=_fernet().encrypt(notes.encode()).decode() if notes else None
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", 303)
+    form = await request.form()
+    title = str(form.get("title", "")).strip()
+    ref = str(form.get("record_reference", "")).strip()
+    category = str(form.get("category", "Executive Record"))
+    retention = str(form.get("retention", "Permanent"))
+    notes = str(form.get("notes", "")).strip()
+    if not title:
+        raise HTTPException(400, "Title required")
+    created_at = datetime.utcnow().isoformat()
+    vault_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_archive_record",
+        name=f"Executive Archive — {title}",
+        classification="confidential",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "title": title,
+            "record_reference": ref,
+            "category": category,
+            "retention": retention,
+            "protected_notes": notes,
+            "created_by": user["username"],
+            "created_at": created_at,
+        },
+    )
     with core.db_cursor(commit=True) as cur:
-        cur.execute("INSERT INTO executive_archive(title,record_reference,category,retention,notes_ciphertext,created_by,created_at) VALUES(?,?,?,?,?,?,?)",(title,ref,category,retention,cipher,user["account_id"],datetime.utcnow().isoformat()))
-    return RedirectResponse("/executive#archive",303)
+        cur.execute(
+            "INSERT INTO executive_archive(title,record_reference,category,retention,notes_ciphertext,created_by,created_at,vault_object_id) VALUES(?,?,?,?,?,?,?,?)",
+            (title, ref, category, retention, None, user["account_id"], created_at, vault_id),
+        )
+    core.log_action(None, user["username"], "executive_archive_stored_in_vault", "vault_object", vault_id)
+    return RedirectResponse("/executive#archive", 303)
 
 
 async def create_meeting(request: Request):
-    user=_principal(request)
-    if not user: return RedirectResponse("/executive/login",303)
-    form=await request.form(); title=str(form.get("title","")).strip(); mtype=str(form.get("meeting_type","Executive Boardroom")); scheduled=str(form.get("scheduled_for","")); guests=str(form.get("guests","")); location=str(form.get("location_mode","Private Boardroom")); notes=str(form.get("notes","")).strip()
-    if not title: raise HTTPException(400,"Title required")
-    cipher=_fernet().encrypt(notes.encode()).decode() if notes else None
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", 303)
+    form = await request.form()
+    title = str(form.get("title", "")).strip()
+    mtype = str(form.get("meeting_type", "Executive Boardroom"))
+    scheduled = str(form.get("scheduled_for", ""))
+    guests = str(form.get("guests", ""))
+    location = str(form.get("location_mode", "Private Boardroom"))
+    notes = str(form.get("notes", "")).strip()
+    if not title:
+        raise HTTPException(400, "Title required")
+    created_at = datetime.utcnow().isoformat()
+    vault_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_meeting_record",
+        name=f"Executive Meeting — {title}",
+        classification="confidential",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "title": title,
+            "meeting_type": mtype,
+            "scheduled_for": scheduled,
+            "guests": guests,
+            "location_mode": location,
+            "protected_notes": notes,
+            "created_by": user["username"],
+            "created_at": created_at,
+        },
+    )
     with core.db_cursor(commit=True) as cur:
-        cur.execute("INSERT INTO executive_meetings(title,meeting_type,scheduled_for,guests,location_mode,notes_ciphertext,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)",(title,mtype,scheduled,guests,location,cipher,user["account_id"],datetime.utcnow().isoformat()))
-    return RedirectResponse("/executive#meetings",303)
+        cur.execute(
+            "INSERT INTO executive_meetings(title,meeting_type,scheduled_for,guests,location_mode,notes_ciphertext,created_by,created_at,vault_object_id) VALUES(?,?,?,?,?,?,?,?,?)",
+            (title, mtype, scheduled, guests, location, None, user["account_id"], created_at, vault_id),
+        )
+    core.log_action(None, user["username"], "executive_meeting_stored_in_vault", "vault_object", vault_id)
+    return RedirectResponse("/executive#meetings", 303)
 
 
 
