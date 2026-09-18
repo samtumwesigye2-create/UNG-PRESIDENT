@@ -240,6 +240,19 @@ def init_schema():
             used_at TEXT,
             vault_object_id TEXT
         )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS executive_leadership_threads(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            office_key TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            priority TEXT NOT NULL DEFAULT 'normal',
+            direction TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'delivered',
+            vault_object_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            read_at TEXT,
+            acknowledged_at TEXT
+        )""")
         cur.execute("""CREATE TABLE IF NOT EXISTS executive_sessions(
             id TEXT PRIMARY KEY,
             account_id INTEGER NOT NULL,
@@ -1040,6 +1053,28 @@ def executive_vault_migrate(request: Request):
     <a href="/executive/vault/migration" style="color:#f0cc67">Return to migration status</a></section>'''
     return _shell(user, body)
 
+def executive_leadership_inbox(request: Request, office_key: str):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    target = next((x for x in LEADERSHIP_DIRECTORY if x["key"] == office_key), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Leadership office not found")
+    with core.db_cursor() as cur:
+        cur.execute("""SELECT * FROM executive_leadership_threads
+                       WHERE office_key=? ORDER BY id DESC LIMIT 50""", (office_key,))
+        rows = cur.fetchall()
+    tr = "".join(
+        f"<tr><td>{r['id']}</td><td>{escape(r['direction'])}</td><td>{escape(r['subject'])}</td><td>{escape(r['priority'])}</td><td>{escape(r['status'])}</td><td>{escape(r['created_at'])}</td><td>{escape(r['vault_object_id'])}</td></tr>"
+        for r in rows
+    ) or "<tr><td colspan='7'>No messages for this office yet.</td></tr>"
+    body=f'''<section class="hero"><h2>{escape(target["title"])} <span class="gold">Secure Channel</span></h2><p>{escape(target["note"])}</p></section>
+    <section class="panel" style="margin-top:16px"><h3>Conversation Ledger</h3>
+    <table><tr><th>ID</th><th>Direction</th><th>Subject</th><th>Priority</th><th>Status</th><th>Created</th><th>VAULT object</th></tr>{tr}</table>
+    <p style="color:#aebdcb;font-size:12px">Message bodies remain in UNG-VAULT; this page holds only channel metadata and VAULT references.</p></section>'''
+    return _shell(user, body)
+
+
 
 def executive_leadership_page(request: Request):
     user = _principal(request)
@@ -1061,6 +1096,7 @@ def executive_leadership_page(request: Request):
                 <label>Secure message</label><textarea name="message" required></textarea>
                 <button>Encrypt & Send to VAULT</button>
             </form>
+            <p><a href="/executive/leadership/{escape(item["key"])}" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Secure Channel →</a></p>
         </section>''')
     body = f'''<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div>
     <div><h2>Executive <span class="gold">Leadership Network</span></h2>
@@ -1107,6 +1143,10 @@ async def executive_leadership_message(request: Request):
         cur.execute(
             "INSERT INTO executive_secure_messages(recipient,subject,ciphertext,priority,created_by,created_at,vault_object_id) VALUES(?,?,?,?,?,?,?)",
             (target["channel"], subject, "VAULT:" + vault_id, priority, user["account_id"], created_at, vault_id),
+        )
+        cur.execute(
+            "INSERT INTO executive_leadership_threads(office_key,subject,priority,direction,sender,status,vault_object_id,created_at) VALUES(?,?,?,?,?,?,?,?)",
+            (target["key"], subject, priority, "outbound", user["username"], "delivered", vault_id, created_at),
         )
     core.log_action(None, user["username"], "executive_leadership_message_stored_in_vault", "vault_object", vault_id)
     return RedirectResponse("/executive/leadership", status_code=303)
@@ -1401,6 +1441,7 @@ def apply_executive_suite(_core=None):
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/leadership", executive_leadership_page, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/leadership/{office_key}", executive_leadership_inbox, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/leadership/message", executive_leadership_message, methods=["POST"])
     core.app.add_api_route("/executive/vault", executive_vault_page, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/vault/migration", executive_vault_migration_page, methods=["GET"], response_class=HTMLResponse)
