@@ -25,6 +25,7 @@ EXEC_MAX_AGE = 60 * 60 * 8
 EXEC_ROLES = {"president", "vice_president", "prime_minister"}
 VAULT_BASE_URL = os.environ.get("UNG_VAULT_BASE_URL", "https://ung-vault-production.up.railway.app").rstrip("/")
 VAULT_INGEST_SECRET = os.environ.get("UNG_VAULT_INGEST_SECRET", "")
+EXEC_AUTO_VAULT_MIGRATE = os.environ.get("EXEC_AUTO_VAULT_MIGRATE", "1").strip().lower() not in {"0","false","no","off"}
 
 
 def _fernet():
@@ -966,6 +967,25 @@ def enrollment_submit(code: str = Form(...), full_name: str = Form(...), usernam
         cur.execute("UPDATE executive_enrollment_codes SET used_at=? WHERE id=? AND used_at IS NULL", (now.isoformat(), row["id"]))
     return RedirectResponse("/executive/login?error=Executive+account+created.+Please+sign+in.", status_code=303)
 
+def _legacy_vault_pending_counts():
+    tables = {
+        "messages": "executive_secure_messages",
+        "archive": "executive_archive",
+        "meetings": "executive_meetings",
+        "principal_accounts": "executive_principal_accounts",
+        "enrollment_codes": "executive_enrollment_codes",
+        "recovery_codes": "executive_recovery_codes",
+        "sessions": "executive_sessions",
+    }
+    counts = {}
+    with core.db_cursor() as cur:
+        for key, table in tables.items():
+            cur.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE vault_object_id IS NULL")
+            counts[key] = int(cur.fetchone()["n"])
+    counts["total"] = sum(counts.values())
+    return counts
+
+
 
 def executive_vault_migration_page(request: Request):
     user = _principal(request)
@@ -1282,6 +1302,18 @@ def legacy_redirect():
 def apply_executive_suite(_core=None):
     init_schema()
     seed_principal_accounts_from_env()
+    if EXEC_AUTO_VAULT_MIGRATE:
+        try:
+            before = _legacy_vault_pending_counts()
+            result = migrate_legacy_executive_records_to_vault(limit_per_table=500)
+            after = _legacy_vault_pending_counts()
+            print("EXEC_VAULT_MIGRATION=" + json.dumps({
+                "before": before,
+                "result": result,
+                "after": after,
+            }, separators=(",", ":")), flush=True)
+        except Exception as exc:
+            print("EXEC_VAULT_MIGRATION_ERROR=" + type(exc).__name__, flush=True)
     paths={"/executive","/executive/vault/migration","/executive/vault/migrate","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/vault","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/security/sessions/revoke","/executive/security/sessions/revoke-others","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
