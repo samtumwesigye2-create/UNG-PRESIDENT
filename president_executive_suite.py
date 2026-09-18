@@ -107,6 +107,15 @@ def init_schema():
             created_by INTEGER,
             created_at TEXT NOT NULL
         )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS executive_enrollment_codes(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code_hash TEXT UNIQUE NOT NULL,
+            role TEXT NOT NULL,
+            issued_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT
+        )""")
 
 
 def seed_principal_accounts_from_env():
@@ -223,7 +232,7 @@ main{{padding:26px 30px 38px;max-width:1450px}}.hero{{background:linear-gradient
 .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}}.card,.panel{{background:#0c1d2e;border:1px solid #233b53;border-radius:13px;padding:18px;box-shadow:0 5px 14px #0004}}.card h3{{color:#f0cc67;margin-top:0}}.card p{{color:#aebdcb;font-size:13px;line-height:1.45}}
 .two{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}}label{{display:block;font-size:12px;font-weight:700;margin:10px 0 5px;color:#c9d3dd}}input,textarea,select{{width:100%;background:#07131f;color:#eef3f8;border:1px solid #334a61;border-radius:7px;padding:10px}}textarea{{min-height:88px}}button{{margin-top:12px;background:#c7a247;color:#07111f;border:0;border-radius:7px;padding:10px 14px;font-weight:800}}table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}}th,td{{padding:9px;border-bottom:1px solid #24384b;text-align:left;vertical-align:top}}th{{color:#d9ba61}}.suite-planner{{background:linear-gradient(135deg,#0c1d2e,#102842);border-color:#34516d}}.suite-planner h3{{font:22px Georgia;color:#f0d37b;margin-bottom:4px}}.suite-planner .intro{{color:#9fb2c3;font-size:12px;margin:0 0 12px}}
 </style></head><body><div class="top"><div class="brand"><div class="brand-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h1>DIGITAL EXECUTIVE SUITE</h1><small>PRINCIPAL PORTAL · UNG-PRESIDENT</small></div></div><div class="who">{escape(_title(user["role"]).upper())}<br><strong>{escape(user["username"])}</strong></div></div>
-<div class="layout"><aside><a href="/executive">Executive Home</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
+<div class="layout"><aside><a href="/executive">Executive Home</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a>{'<a href="/executive/access">Principal Access</a>' if user["role"]=="president" else ''}<a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
     return HTMLResponse(page.replace("__PRES_SEAL__", core.PRES_SEAL_B64))
 
 
@@ -280,6 +289,84 @@ async def create_meeting(request: Request):
     return RedirectResponse("/executive#meetings",303)
 
 
+
+def _hash_enrollment_code(code: str) -> str:
+    return hmac.new(core.SECRET_KEY.encode(), ("exec-enroll|" + code).encode(), hashlib.sha256).hexdigest()
+
+
+def access_admin(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    if user["role"] != "president":
+        raise HTTPException(status_code=403, detail="President access required")
+    with core.db_cursor() as cur:
+        cur.execute("SELECT id,username,role,full_name,last_login,created_at FROM executive_principal_accounts ORDER BY id")
+        accounts = cur.fetchall()
+        cur.execute("SELECT id,role,created_at,expires_at,used_at FROM executive_enrollment_codes ORDER BY id DESC LIMIT 20")
+        codes = cur.fetchall()
+    acct_rows = "".join(
+        f"<tr><td>{r['id']}</td><td>{escape(r['full_name'])}</td><td>{escape(r['username'])}</td><td>{escape(_title(r['role']))}</td><td>{escape(r['last_login'] or 'Never')}</td></tr>"
+        for r in accounts
+    ) or "<tr><td colspan='5'>No principal accounts.</td></tr>"
+    code_rows = "".join(
+        f"<tr><td>{r['id']}</td><td>{escape(_title(r['role']))}</td><td>{escape(r['created_at'])}</td><td>{escape(r['expires_at'])}</td><td>{'Used' if r['used_at'] else 'Available'}</td></tr>"
+        for r in codes
+    ) or "<tr><td colspan='5'>No enrollment codes issued.</td></tr>"
+    body=f"""<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h2>Principal <span class="gold">Access Administration</span></h2><p>President-controlled enrollment for the Vice President and Prime Minister. One-time codes expire automatically and cannot be reused.</p></div></div></section>
+<div class="two"><section class="panel"><h3>Issue One-Time Enrollment Code</h3><form method="post" action="/executive/access/codes"><label>Principal role</label><select name="role"><option value="vice_president">Vice President</option><option value="prime_minister">Prime Minister</option></select><label>Valid for</label><select name="hours"><option value="1">1 hour</option><option value="8">8 hours</option><option value="24">24 hours</option></select><button>Generate One-Time Code</button></form><p style="color:#9fb2c3;font-size:12px">The clear code is shown only once after generation.</p></section>
+<section class="panel"><h3>Principal Accounts</h3><table><tr><th>ID</th><th>Name</th><th>Username</th><th>Role</th><th>Last Login</th></tr>{acct_rows}</table></section></div>
+<section class="panel" style="margin-top:16px"><h3>Enrollment Code History</h3><table><tr><th>ID</th><th>Role</th><th>Created</th><th>Expires</th><th>Status</th></tr>{code_rows}</table></section>"""
+    return _shell(user, body)
+
+
+async def create_enrollment_code(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    if user["role"] != "president":
+        raise HTTPException(status_code=403, detail="President access required")
+    form = await request.form()
+    role = str(form.get("role","")).strip()
+    hours = int(str(form.get("hours","8")))
+    if role not in {"vice_president","prime_minister"} or hours not in {1,8,24}:
+        raise HTTPException(status_code=400, detail="Invalid enrollment request")
+    code = "EXEC-" + "-".join(secrets.token_hex(2).upper() for _ in range(3))
+    now = datetime.utcnow()
+    from datetime import timedelta
+    expires = now + timedelta(hours=hours)
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("INSERT INTO executive_enrollment_codes(code_hash,role,issued_by,created_at,expires_at) VALUES(?,?,?,?,?)",
+                    (_hash_enrollment_code(code), role, user["account_id"], now.isoformat(), expires.isoformat()))
+    body=f"""<section class="hero"><h2>One-Time Enrollment Code</h2><p>Give this code directly to the designated {_title(role)}. It is displayed only on this screen.</p></section><section class="panel" style="margin-top:16px;text-align:center"><div style="font:700 30px monospace;color:#f0d37b;letter-spacing:2px;padding:22px">{escape(code)}</div><p>Expires {escape(expires.isoformat())} UTC</p><a href="/executive/access" style="color:#d9bb62">Return to Principal Access</a></section>"""
+    return _shell(user, body)
+
+
+def enrollment_form(request: Request):
+    return HTMLResponse("""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Executive Enrollment</title><style>body{font-family:Arial;background:#071522;color:#fff;display:grid;place-items:center;min-height:100vh}.b{width:min(480px,92vw);background:#0c2033;padding:28px;border:1px solid #385069;border-radius:14px}input{width:100%;padding:11px;margin:5px 0 12px;box-sizing:border-box}button{padding:12px;width:100%;background:#caa84b;border:0;font-weight:bold}</style></head><body><div class="b"><h2>Principal Enrollment</h2><form method="post" action="/executive/enroll"><label>One-time code</label><input type="password" name="code" required><label>Full name</label><input name="full_name" required><label>Username</label><input name="username" required><label>New password</label><input type="password" name="password" minlength="12" required><button>Create Executive Account</button></form></div></body></html>""")
+
+
+def enrollment_submit(code: str = Form(...), full_name: str = Form(...), username: str = Form(...), password: str = Form(...)):
+    if len(password) < 12:
+        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+    now = datetime.utcnow()
+    with core.db_cursor() as cur:
+        cur.execute("SELECT * FROM executive_enrollment_codes WHERE code_hash=?", (_hash_enrollment_code(code.strip()),))
+        row = cur.fetchone()
+    if not row or row["used_at"] or datetime.fromisoformat(row["expires_at"]) < now:
+        raise HTTPException(status_code=403, detail="Invalid or expired one-time code")
+    with core.db_cursor() as cur:
+        cur.execute("SELECT id FROM executive_principal_accounts WHERE role=? OR username=?", (row["role"], username.strip()))
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="That principal role or username is already enrolled")
+    salt = secrets.token_hex(16)
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("INSERT INTO executive_principal_accounts(username,password_hash,salt,role,full_name,created_at) VALUES(?,?,?,?,?,?)",
+                    (username.strip(), _hash_password(password, salt), salt, row["role"], full_name.strip(), now.isoformat()))
+        cur.execute("UPDATE executive_enrollment_codes SET used_at=? WHERE id=? AND used_at IS NULL", (now.isoformat(), row["id"]))
+    return RedirectResponse("/executive/login?error=Executive+account+created.+Please+sign+in.", status_code=303)
+
+
 def legacy_redirect():
     return RedirectResponse("/executive", status_code=303)
 
@@ -287,7 +374,7 @@ def legacy_redirect():
 def apply_executive_suite(_core=None):
     init_schema()
     seed_principal_accounts_from_env()
-    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/admin/executive-suite"}
+    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login_form, methods=["GET"], response_class=HTMLResponse)
@@ -298,5 +385,9 @@ def apply_executive_suite(_core=None):
     core.app.add_api_route("/executive/messages", create_message, methods=["POST"])
     core.app.add_api_route("/executive/archive", create_archive, methods=["POST"])
     core.app.add_api_route("/executive/meetings", create_meeting, methods=["POST"])
+    core.app.add_api_route("/executive/access", access_admin, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/access/codes", create_enrollment_code, methods=["POST"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/enroll", enrollment_form, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/enroll", enrollment_submit, methods=["POST"])
     core.app.add_api_route("/admin/executive-suite", legacy_redirect, methods=["GET"])
     return True
