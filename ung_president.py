@@ -356,24 +356,26 @@ tr:hover{background:#faf8f0;}
 /* Presidential command-style public homepage */
 body{font-family:Arial,Helvetica,sans-serif;background:#eef2f6;color:#13233a}
 .site-header{background:linear-gradient(90deg,#061a31,#0a2d52);border-bottom:2px solid #d6aa32;box-shadow:0 2px 12px rgba(0,0,0,.2)}
-.header-inner{max-width:1440px;padding:12px 28px;gap:22px;flex-wrap:nowrap}
+.header-inner{max-width:1440px;padding:10px 28px;gap:22px;flex-wrap:nowrap;min-height:112px}
 .brand{min-width:340px;gap:16px}
-.seal-img{width:72px;height:72px;box-shadow:0 0 0 2px #d6aa32}
+.seal-img{width:92px;height:92px;box-shadow:0 0 0 2px #d6aa32}
 .brand-copy{display:flex;flex-direction:column;line-height:1.1}
-.brand-title{font-family:Georgia,'Times New Roman',serif;font-size:28px;color:#fff;letter-spacing:1.5px}
+.brand-title{font-family:Georgia,'Times New Roman',serif;font-size:31px;color:#fff;letter-spacing:1.5px}
 .brand-sub{font-size:12px;color:#e0bd56;letter-spacing:3px;margin-top:6px}
 .main-nav{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:1}
 .main-nav a{margin:0;padding:10px 12px;border-bottom:3px solid transparent;color:#e9eff5;font-size:13px;white-space:nowrap}
 .main-nav a:hover{color:#fff;border-bottom-color:#d6aa32;background:rgba(255,255,255,.04)}
 .staff-link{border:1px solid rgba(214,170,50,.8)!important;border-radius:6px}
 .pres-hero{position:relative;overflow:hidden;background:
-radial-gradient(circle at 78% 30%,rgba(214,170,50,.13),transparent 30%),
-linear-gradient(115deg,#08213e 0%,#0c3157 58%,#102944 100%);color:#fff;padding:50px 38px 88px;border-bottom:1px solid rgba(255,255,255,.1)}
+linear-gradient(90deg,rgba(3,20,38,.92) 0%,rgba(5,28,51,.78) 42%,rgba(5,28,51,.42) 72%,rgba(3,20,38,.35) 100%),
+url("https://statehouse.go.ug/wp-content/uploads/elementor/thumbs/Statehouse-night-1500x500-2-q9vxq9dyceh2kh2rboi8fllpgxf49dg9zigx1c9uh4.jpeg") center/cover no-repeat;
+color:#fff;padding:56px 38px 98px;border-bottom:1px solid rgba(255,255,255,.1);min-height:360px;display:flex;align-items:center}
 .pres-hero-inner{max-width:1360px;margin:0 auto}
 .pres-kicker{font-size:13px;letter-spacing:3px;color:#e0bd56;text-transform:uppercase;font-weight:700;margin-bottom:12px}
 .pres-hero h1{font-family:Georgia,'Times New Roman',serif;font-size:48px;line-height:1.02;margin:0 0 12px;max-width:760px}
 .pres-hero h1 span{color:#f0bd3c}
 .pres-hero p{font-size:19px;color:#d8e2ec;margin:0;max-width:720px}
+.statehouse-caption{margin-top:28px;display:inline-block;padding:7px 10px;border:1px solid rgba(240,189,60,.72);border-radius:4px;color:#f0bd3c;font-size:11px;font-weight:700;letter-spacing:2.2px;background:rgba(4,22,40,.42)}
 .quick-actions{max-width:1360px;margin:-48px auto 0;padding:0 30px;position:relative;z-index:3;display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
 .quick-card{min-height:116px;border-radius:10px;padding:20px 14px;text-align:center;color:#fff;text-decoration:none;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:0 8px 22px rgba(10,30,55,.18);transition:transform .15s ease}
 .quick-card:hover{transform:translateY(-3px)}
@@ -449,6 +451,7 @@ INDEX = """
     <div class="pres-kicker">Office of the President · Republic of Uganda</div>
     <h1>Leadership. Service.<br><span>A Stronger Uganda.</span></h1>
     <p>Presidential operations, public services, executive records and citizen engagement from one secure national portal.</p>
+    <div class="statehouse-caption">STATE HOUSE · ENTEBBE</div>
   </div>
 </section>
 
