@@ -232,7 +232,7 @@ main{{padding:26px 30px 38px;max-width:1450px}}.hero{{background:linear-gradient
 .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}}.card,.panel{{background:#0c1d2e;border:1px solid #233b53;border-radius:13px;padding:18px;box-shadow:0 5px 14px #0004}}.card h3{{color:#f0cc67;margin-top:0}}.card p{{color:#aebdcb;font-size:13px;line-height:1.45}}
 .two{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}}label{{display:block;font-size:12px;font-weight:700;margin:10px 0 5px;color:#c9d3dd}}input,textarea,select{{width:100%;background:#07131f;color:#eef3f8;border:1px solid #334a61;border-radius:7px;padding:10px}}textarea{{min-height:88px}}button{{margin-top:12px;background:#c7a247;color:#07111f;border:0;border-radius:7px;padding:10px 14px;font-weight:800}}table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}}th,td{{padding:9px;border-bottom:1px solid #24384b;text-align:left;vertical-align:top}}th{{color:#d9ba61}}.suite-planner{{background:linear-gradient(135deg,#0c1d2e,#102842);border-color:#34516d}}.suite-planner h3{{font:22px Georgia;color:#f0d37b;margin-bottom:4px}}.suite-planner .intro{{color:#9fb2c3;font-size:12px;margin:0 0 12px}}
 </style></head><body><div class="top"><div class="brand"><div class="brand-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h1>DIGITAL EXECUTIVE SUITE</h1><small>PRINCIPAL PORTAL · UNG-PRESIDENT</small></div></div><div class="who">{escape(_title(user["role"]).upper())}<br><strong>{escape(user["username"])}</strong></div></div>
-<div class="layout"><aside><a href="/executive">Executive Home</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a>{'<a href="/executive/access">Principal Access</a>' if user["role"]=="president" else ''}<a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
+<div class="layout"><aside><a href="/executive">Executive Home</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a>{'<a href="/executive/access">Principal Access</a>' if user["role"]=="president" else ''}<a href="/executive/security">Security & Password</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
     return HTMLResponse(page.replace("__PRES_SEAL__", core.PRES_SEAL_B64))
 
 
@@ -367,6 +367,44 @@ def enrollment_submit(code: str = Form(...), full_name: str = Form(...), usernam
     return RedirectResponse("/executive/login?error=Executive+account+created.+Please+sign+in.", status_code=303)
 
 
+
+def security_page(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    body=f"""<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h2>Executive <span class="gold">Security</span></h2><p>Manage your principal-only credential independently from Staff Portal accounts.</p></div></div></section>
+<div class="two"><section class="panel"><h3>Change Executive Password</h3><form method="post" action="/executive/security/password"><label>Current password</label><input type="password" name="current_password" autocomplete="current-password" required><label>New password</label><input type="password" name="new_password" minlength="14" autocomplete="new-password" required><label>Confirm new password</label><input type="password" name="confirm_password" minlength="14" autocomplete="new-password" required><button>Update Executive Password</button></form></section>
+<section class="panel"><h3>Session Protection</h3><p style="color:#aebdcb;font-size:13px">Executive Portal sessions are isolated from Staff Portal sessions and expire automatically. Use Secure Logout when leaving a principal device.</p><table><tr><th>Principal</th><td>{escape(_title(user["role"]))}</td></tr><tr><th>Username</th><td>{escape(user["username"])}</td></tr><tr><th>Session lifetime</th><td>8 hours maximum</td></tr><tr><th>Cookie</th><td>HTTP-only · SameSite Strict · Secure in production</td></tr></table></section></div>"""
+    return _shell(user, body)
+
+
+async def change_executive_password(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    form = await request.form()
+    current = str(form.get("current_password",""))
+    new = str(form.get("new_password",""))
+    confirm = str(form.get("confirm_password",""))
+    if new != confirm:
+        raise HTTPException(status_code=400, detail="New passwords do not match")
+    if len(new) < 14:
+        raise HTTPException(status_code=400, detail="New password must be at least 14 characters")
+    with core.db_cursor() as cur:
+        cur.execute("SELECT * FROM executive_principal_accounts WHERE id=?", (user["account_id"],))
+        row = cur.fetchone()
+    if not row or not _verify_password(current, row["password_hash"], row["salt"]):
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+    salt = secrets.token_hex(16)
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("UPDATE executive_principal_accounts SET password_hash=?, salt=? WHERE id=?",
+                    (_hash_password(new, salt), salt, user["account_id"]))
+    core.log_action(None, user["username"], "executive_password_changed", "executive_principal_accounts", user["account_id"])
+    response = RedirectResponse("/executive/login?error=Password+updated.+Please+sign+in+again.", status_code=303)
+    response.delete_cookie(EXEC_COOKIE, path="/")
+    return response
+
+
 def legacy_redirect():
     return RedirectResponse("/executive", status_code=303)
 
@@ -374,7 +412,7 @@ def legacy_redirect():
 def apply_executive_suite(_core=None):
     init_schema()
     seed_principal_accounts_from_env()
-    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/admin/executive-suite"}
+    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/security","/executive/security/password","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login_form, methods=["GET"], response_class=HTMLResponse)
@@ -389,5 +427,7 @@ def apply_executive_suite(_core=None):
     core.app.add_api_route("/executive/access/codes", create_enrollment_code, methods=["POST"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/enroll", enrollment_form, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/enroll", enrollment_submit, methods=["POST"])
+    core.app.add_api_route("/executive/security", security_page, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/security/password", change_executive_password, methods=["POST"])
     core.app.add_api_route("/admin/executive-suite", legacy_redirect, methods=["GET"])
     return True
