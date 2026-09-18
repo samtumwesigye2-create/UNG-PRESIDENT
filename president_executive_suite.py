@@ -6,6 +6,9 @@ import os
 import secrets
 import time
 import io
+import json
+import urllib.request
+import urllib.error
 from datetime import datetime
 from html import escape
 
@@ -20,6 +23,7 @@ import ung_president as core
 EXEC_COOKIE = "executive_session"
 EXEC_MAX_AGE = 60 * 60 * 8
 EXEC_ROLES = {"president", "vice_president", "prime_minister"}
+VAULT_BASE_URL = os.environ.get("UNG_VAULT_BASE_URL", "https://ung-vault-production.up.railway.app").rstrip("/")
 
 
 def _fernet():
@@ -219,6 +223,16 @@ def seed_principal_accounts_from_env():
             )
 
 
+def _vault_health():
+    try:
+        req = urllib.request.Request(VAULT_BASE_URL + "/health", method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return bool(200 <= resp.status < 300), data
+    except Exception as exc:
+        return False, {"error": type(exc).__name__}
+
+
 def _title(role: str) -> str:
     return {
         "president": "President",
@@ -385,7 +399,7 @@ main{{padding:26px 30px 38px;max-width:1450px}}.hero{{background:linear-gradient
 .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}}.card,.panel{{background:#0c1d2e;border:1px solid #233b53;border-radius:13px;padding:18px;box-shadow:0 5px 14px #0004}}.card h3{{color:#f0cc67;margin-top:0}}.card p{{color:#aebdcb;font-size:13px;line-height:1.45}}
 .two{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}}label{{display:block;font-size:12px;font-weight:700;margin:10px 0 5px;color:#c9d3dd}}input,textarea,select{{width:100%;background:#07131f;color:#eef3f8;border:1px solid #334a61;border-radius:7px;padding:10px}}textarea{{min-height:88px}}button{{margin-top:12px;background:#c7a247;color:#07111f;border:0;border-radius:7px;padding:10px 14px;font-weight:800}}table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}}th,td{{padding:9px;border-bottom:1px solid #24384b;text-align:left;vertical-align:top}}th{{color:#d9ba61}}.suite-planner{{background:linear-gradient(135deg,#0c1d2e,#102842);border-color:#34516d}}.suite-planner h3{{font:22px Georgia;color:#f0d37b;margin-bottom:4px}}.suite-planner .intro{{color:#9fb2c3;font-size:12px;margin:0 0 12px}}
 </style></head><body><div class="top"><div class="brand"><div class="brand-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h1>DIGITAL EXECUTIVE SUITE</h1><small>PRINCIPAL PORTAL · UNG-PRESIDENT</small></div></div><div class="who">{escape(_title(user["role"]).upper())}<br><strong>{escape(user["username"])}</strong></div></div>
-<div class="layout"><aside><a href="/executive">Executive Home</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a>{'<a href="/executive/access">Principal Access</a>' if user["role"]=="president" else ''}<a href="/executive/security">Security & Password</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
+<div class="layout"><aside><a href="/executive">Executive Home</a><a href="/executive/vault">Secure Vault & SCIF</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a>{'<a href="/executive/access">Principal Access</a>' if user["role"]=="president" else ''}<a href="/executive/security">Security & Password</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
     return HTMLResponse(page.replace("__PRES_SEAL__", core.PRES_SEAL_B64))
 
 
@@ -402,7 +416,7 @@ def dashboard(request: Request):
     arc_rows="".join(f"<tr><td>{r['id']}</td><td>{escape(r['title'])}</td><td>{escape(r['category'])}</td><td>{escape(r['retention'])}</td></tr>" for r in archive) or "<tr><td colspan='4'>No archived records yet.</td></tr>"
     mtg_rows="".join(f"<tr><td>{r['id']}</td><td>{escape(r['title'])}</td><td>{escape(r['meeting_type'])}</td><td>{escape(r['scheduled_for'] or '')}</td><td>{escape(r['location_mode'])}</td></tr>" for r in meetings) or "<tr><td colspan='5'>No executive meetings yet.</td></tr>"
     body=f"""<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h2>{escape(_title(user["role"]))} <span class="gold">Executive Workspace</span></h2><p>This is a principal-only portal. Staff Portal sessions are not accepted here.</p></div></div></section>
-<div class="grid"><div class="card"><h3>Executive Security Center</h3><p>Manage permanent credentials, authenticator MFA, and one-time recovery codes.</p><p><a href="/executive/security" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Security Center →</a></p></div><div class="card"><h3>Principal Identity</h3><p>Separate executive account and cookie namespace for the President, Vice President and Prime Minister.</p></div><div class="card"><h3>Encrypted Communications</h3><p>Protected executive messages encrypted before database storage.</p></div><div class="card"><h3>Cloud-First Archive</h3><p>Electronic capture of executive records, references and retention metadata.</p></div><div class="card"><h3>Private Workspace</h3><p>Dedicated digital study for principal-level work.</p></div><div class="card"><h3>Formal Boardroom</h3><p>Plan boardroom, private dining and secure conference sessions.</p></div><div class="card"><h3>Segregated Access</h3><p>Staff accounts cannot authenticate into this portal.</p></div></div>
+<div class="grid"><div class="card"><h3>Secure Vault & SCIF</h3><p>Executive access to UNG-VAULT protected documents, Digital SCIF, encrypted file exchange, redacted sharing and emergency revocation.</p><p><a href="/executive/vault" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Secure Vault →</a></p></div><div class="card"><h3>Executive Security Center</h3><p>Manage permanent credentials, authenticator MFA, and one-time recovery codes.</p><p><a href="/executive/security" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Security Center →</a></p></div><div class="card"><h3>Principal Identity</h3><p>Separate executive account and cookie namespace for the President, Vice President and Prime Minister.</p></div><div class="card"><h3>Encrypted Communications</h3><p>Protected executive messages encrypted before database storage.</p></div><div class="card"><h3>Cloud-First Archive</h3><p>Electronic capture of executive records, references and retention metadata.</p></div><div class="card"><h3>Private Workspace</h3><p>Dedicated digital study for principal-level work.</p></div><div class="card"><h3>Formal Boardroom</h3><p>Plan boardroom, private dining and secure conference sessions.</p></div><div class="card"><h3>Segregated Access</h3><p>Staff accounts cannot authenticate into this portal.</p></div></div>
 <div class="two"><section class="panel" id="comms"><h3>Secure Communications</h3><form method="post" action="/executive/messages"><label>Recipient / channel</label><input name="recipient" required><label>Subject</label><input name="subject" required><label>Priority</label><select name="priority"><option>normal</option><option>high</option><option>urgent</option></select><label>Message</label><textarea name="message" required></textarea><button>Encrypt & Save</button></form><table><tr><th>ID</th><th>Recipient</th><th>Subject</th><th>Priority</th><th>Decrypted view</th></tr>{msg_rows}</table></section>
 <section class="panel" id="archive"><h3>Executive Archive</h3><form method="post" action="/executive/archive"><label>Record title</label><input name="title" required><label>Reference</label><input name="record_reference"><label>Category</label><select name="category"><option>Executive Record</option><option>Briefing</option><option>Correspondence</option><option>Meeting Record</option><option>Digital Asset</option></select><label>Retention</label><select name="retention"><option>Permanent</option><option>Presidential Term</option><option>Operational</option></select><label>Protected notes</label><textarea name="notes"></textarea><button>Capture Record</button></form><table><tr><th>ID</th><th>Title</th><th>Category</th><th>Retention</th></tr>{arc_rows}</table></section></div>
 <section class="panel suite-planner" id="meetings" style="margin-top:16px"><h3>Boardroom / Private Suite Planner</h3><p class="intro">Plan executive boardroom sessions, private dining engagements, secure conferences, and principal workspace appointments.</p><form method="post" action="/executive/meetings"><div class="two"><div><label>Title</label><input name="title" required><label>Type</label><select name="meeting_type"><option>Executive Boardroom</option><option>Private Dining</option><option>Presidential Study</option><option>Secure Video Conference</option></select><label>Scheduled for</label><input type="datetime-local" name="scheduled_for"></div><div><label>Guests</label><input name="guests"><label>Location / mode</label><select name="location_mode"><option>Private Boardroom</option><option>Private Dining Room</option><option>Executive Office</option><option>Secure Remote</option></select><label>Protected notes</label><textarea name="notes"></textarea></div></div><button>Schedule Executive Session</button></form><table><tr><th>ID</th><th>Title</th><th>Type</th><th>Scheduled</th><th>Location</th></tr>{mtg_rows}</table></section>"""
@@ -527,6 +541,45 @@ def enrollment_submit(code: str = Form(...), full_name: str = Form(...), usernam
                     (username.strip(), _hash_password(password, salt), salt, row["role"], full_name.strip(), now.isoformat()))
         cur.execute("UPDATE executive_enrollment_codes SET used_at=? WHERE id=? AND used_at IS NULL", (now.isoformat(), row["id"]))
     return RedirectResponse("/executive/login?error=Executive+account+created.+Please+sign+in.", status_code=303)
+
+
+
+def executive_vault_page(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    online, health = _vault_health()
+    status = "ONLINE" if online else "UNAVAILABLE"
+    status_color = "#8fd2a8" if online else "#ff9b9b"
+    cards = [
+        ("Protected Documents", "Store and retrieve classified or protected executive material through UNG-VAULT.", "/ui"),
+        ("Digital SCIF", "Open the controlled high-assurance viewer for restricted and top-secret material.", "/ui"),
+        ("Encrypted File Exchange", "Encrypt complete files without redaction and decrypt approved VAULT packages.", "/ui"),
+        ("Redacted Sharing", "Create irreversible redacted previews with separately protected originals.", "/ui"),
+        ("Executive Archive", "Use VAULT protection profiles and classification markings for sensitive records.", "/ui"),
+        ("Emergency Revoke", "Terminate active, locked or pending Digital SCIF sessions when required.", "/ui"),
+        ("Security Activity", "Review VAULT audit controls and SENTINEL-connected security events.", "/ui"),
+    ]
+    card_html = "".join(
+        f'''<section class="card"><h3>{escape(title)}</h3><p>{escape(desc)}</p>
+        <a href="{escape(VAULT_BASE_URL + path)}" target="_blank" rel="noopener noreferrer" style="color:#f0cc67;text-decoration:none;font-weight:700">Open in Secure VAULT →</a></section>'''
+        for title, desc, path in cards
+    )
+    body = f'''<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div>
+    <div><h2>Secure <span class="gold">Vault & SCIF</span></h2><p>Executive-facing access to UNG-VAULT from inside the Digital Executive Suite. VAULT remains an independently secured backend service.</p></div></div></section>
+    <div class="two">
+      <section class="panel"><h3>UNG-VAULT Connection</h3><table>
+        <tr><th>Service</th><td>UNG-VAULT</td></tr>
+        <tr><th>Status</th><td style="color:{status_color};font-weight:800">{status}</td></tr>
+        <tr><th>Principal</th><td>{escape(_title(user["role"]))}</td></tr>
+        <tr><th>Integration</th><td>Executive Suite launch surface · VAULT remains separate security boundary</td></tr>
+        <tr><th>SCIF</th><td>Hosted inside UNG-VAULT</td></tr>
+      </table></section>
+      <section class="panel"><h3>Security Boundary</h3><p style="color:#aebdcb;line-height:1.55">UNG-PRESIDENT does not store VAULT master keys, SCIF plaintext, or VAULT database records. This page is the executive front door; encryption, classification enforcement, SCIF controls, audit and SENTINEL event forwarding remain inside UNG-VAULT.</p></section>
+    </div>
+    <div class="grid">{card_html}</div>
+    <section class="panel" style="margin-top:16px"><h3>Executive Security Path</h3><p style="color:#aebdcb">Principal Portal → Secure Vault & SCIF → UNG-VAULT → Digital SCIF / protected files → SENTINEL security monitoring</p></section>'''
+    return _shell(user, body)
 
 
 
@@ -699,9 +752,10 @@ def legacy_redirect():
 def apply_executive_suite(_core=None):
     init_schema()
     seed_principal_accounts_from_env()
-    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/security/sessions/revoke","/executive/security/sessions/revoke-others","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
+    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/vault","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/security/sessions/revoke","/executive/security/sessions/revoke-others","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/vault", executive_vault_page, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login_form, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login, methods=["POST"])
     core.app.add_api_route("/executive/mfa", executive_mfa_form, methods=["GET"], response_class=HTMLResponse)
