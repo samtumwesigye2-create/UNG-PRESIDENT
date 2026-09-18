@@ -21,3 +21,14 @@ Role checks gate privileged writes; only the president signs orders. The supplie
 ## Validation
 
 Install `requirements-dev.txt`, then run `python -m pytest tests -q`. Tests cover public pages, unauthorized access, password policy, login cookies, restricted signing/audit access, one-use enrollment, password hashing, token tampering and HTML escaping. Registration's missing password-policy helper and template escaping have been corrected from the PDF source.
+
+
+## UNG-VAULT / Digital SCIF integration
+
+The Digital Executive Suite now includes a principal-only **Secure Vault & SCIF** area.
+
+- UNG-PRESIDENT is the executive-facing launch surface.
+- UNG-VAULT remains a separate security boundary and continues to own cryptography, protected-object storage, classification enforcement, Digital SCIF sessions, audit records, and SENTINEL security-event forwarding.
+- The Executive Suite checks VAULT service health and exposes executive shortcuts for protected documents, Digital SCIF, encrypted file exchange, redacted sharing, emergency revocation, and security activity.
+- Configure the backend location with `UNG_VAULT_BASE_URL`.
+- UNG-PRESIDENT does not store VAULT master keys or SCIF plaintext.
