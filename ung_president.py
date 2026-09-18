@@ -406,22 +406,23 @@ color:#fff;padding:56px 38px 98px;border-bottom:1px solid rgba(255,255,255,.1);m
 .badge-item{max-width:250px}
 .badge-circle{width:210px;height:210px}
 .site-footer{background:#061a31;color:#aeb9c4;padding:24px}
-@media(max-width:1100px){
- .header-inner{flex-wrap:wrap}.brand{min-width:0}.main-nav{justify-content:flex-start;overflow-x:auto;width:100%}
- .quick-actions{grid-template-columns:repeat(3,1fr)}.metric-strip{grid-template-columns:repeat(2,1fr)}
-}
-@media(max-width:700px){
- .header-inner{padding:10px 14px}.seal-img{width:54px;height:54px}.brand-title{font-size:20px}.brand-sub{font-size:9px;letter-spacing:2px}
- .pres-hero{padding:34px 20px 76px}.pres-hero h1{font-size:34px}.pres-hero p{font-size:16px}
- .quick-actions{padding:0 16px;grid-template-columns:repeat(2,1fr);gap:10px}.quick-card{min-height:100px}
- .metric-strip{padding:0 16px;grid-template-columns:1fr 1fr;gap:10px}.metric-card{padding:14px 12px}.metric-value{font-size:22px}
- .public-content{padding:0 16px;grid-template-columns:1fr}.badge-row{padding:20px 16px}
+html,body{min-width:1180px}
+body{overflow-x:auto}
+.header-inner{min-width:1180px}
+.pres-hero{min-width:1180px}
+.quick-actions{min-width:1120px}
+.metric-strip{min-width:1120px}
+.public-content{min-width:1120px}
+.badge-row{min-width:1120px}
+@media(max-width:1179px){
+  .header-inner{flex-wrap:nowrap}
+  .main-nav{flex-wrap:nowrap;overflow:visible}
 }
 
 """
 BASE = """
 <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=1180, initial-scale=1.0">
 <link rel="icon" type="image/png" href="data:image/png;base64,{{ pres_seal_b64 }}">
 <title>{% block title %}Office of the President{% endblock %}</title>
 <style>{{ css }}</style></head><body>
