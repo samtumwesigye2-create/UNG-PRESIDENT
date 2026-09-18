@@ -313,6 +313,231 @@ def _store_executive_record_in_vault(*, user, record_type: str, name: str, paylo
         raise HTTPException(status_code=503, detail="VAULT did not return a protected object reference")
     return object_id
 
+def migrate_legacy_executive_records_to_vault(limit_per_table: int = 200):
+    """Retryable one-way migration of legacy Executive Suite records into VAULT."""
+    summary = {"migrated": 0, "failed": 0, "tables": {}}
+
+    def migrate_table(name, query, migrate_row, update_sql):
+        migrated = failed = 0
+        with core.db_cursor() as cur:
+            cur.execute(query, (limit_per_table,))
+            rows = cur.fetchall()
+        for row in rows:
+            try:
+                vault_id = migrate_row(row)
+                with core.db_cursor(commit=True) as cur:
+                    cur.execute(update_sql, (vault_id, row["id"]))
+                migrated += 1
+            except Exception:
+                failed += 1
+        summary["migrated"] += migrated
+        summary["failed"] += failed
+        summary["tables"][name] = {"migrated": migrated, "failed": failed}
+    
+    migrate_table(
+        "messages",
+        "SELECT * FROM executive_secure_messages WHERE vault_object_id IS NULL ORDER BY id LIMIT ?",
+        lambda row: _store_executive_record_in_vault(
+            user={"username": "legacy-migration"},
+            record_type="executive_secure_message",
+            name=f"Executive Communication — {row['subject']}",
+            classification="confidential",
+            protection_profile="VAULT-ENVELOPE",
+            payload={
+                "recipient": row["recipient"],
+                "subject": row["subject"],
+                "priority": row["priority"],
+                "message": _decrypt(row["ciphertext"]),
+                "created_by_account_id": row["created_by"],
+                "created_at": row["created_at"],
+                "legacy_migration": True,
+            },
+        ),
+        "UPDATE executive_secure_messages SET vault_object_id=?, ciphertext='VAULT:'||? WHERE id=?"
+    )
+
+    # Messages need a separate updater because ciphertext is replaced with the reference marker.
+    with core.db_cursor() as cur:
+        cur.execute("SELECT * FROM executive_secure_messages WHERE vault_object_id IS NULL ORDER BY id LIMIT ?", (limit_per_table,))
+        legacy_messages = cur.fetchall()
+    # Remove the earlier generic message result if rows still exist due updater incompatibility.
+    if legacy_messages:
+        summary["migrated"] -= summary["tables"]["messages"]["migrated"]
+        summary["failed"] -= summary["tables"]["messages"]["failed"]
+        mm = mf = 0
+        for row in legacy_messages:
+            try:
+                vault_id = _store_executive_record_in_vault(
+                    user={"username": "legacy-migration"},
+                    record_type="executive_secure_message",
+                    name=f"Executive Communication — {row['subject']}",
+                    classification="confidential",
+                    protection_profile="VAULT-ENVELOPE",
+                    payload={
+                        "recipient": row["recipient"],
+                        "subject": row["subject"],
+                        "priority": row["priority"],
+                        "message": _decrypt(row["ciphertext"]),
+                        "created_by_account_id": row["created_by"],
+                        "created_at": row["created_at"],
+                        "legacy_migration": True,
+                    },
+                )
+                with core.db_cursor(commit=True) as cur:
+                    cur.execute("UPDATE executive_secure_messages SET vault_object_id=?, ciphertext=? WHERE id=?",
+                                (vault_id, "VAULT:" + vault_id, row["id"]))
+                mm += 1
+            except Exception:
+                mf += 1
+        summary["tables"]["messages"] = {"migrated": mm, "failed": mf}
+        summary["migrated"] += mm
+        summary["failed"] += mf
+
+    migrate_table(
+        "archive",
+        "SELECT * FROM executive_archive WHERE vault_object_id IS NULL ORDER BY id LIMIT ?",
+        lambda row: _store_executive_record_in_vault(
+            user={"username": "legacy-migration"},
+            record_type="executive_archive_record",
+            name=f"Executive Archive — {row['title']}",
+            classification="confidential",
+            protection_profile="VAULT-ENVELOPE",
+            payload={
+                "title": row["title"],
+                "record_reference": row["record_reference"],
+                "category": row["category"],
+                "retention": row["retention"],
+                "protected_notes": _decrypt(row["notes_ciphertext"]) if row["notes_ciphertext"] else "",
+                "created_by_account_id": row["created_by"],
+                "created_at": row["created_at"],
+                "legacy_migration": True,
+            },
+        ),
+        "UPDATE executive_archive SET vault_object_id=? WHERE id=?"
+    )
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("UPDATE executive_archive SET notes_ciphertext=NULL WHERE vault_object_id IS NOT NULL")
+
+    migrate_table(
+        "meetings",
+        "SELECT * FROM executive_meetings WHERE vault_object_id IS NULL ORDER BY id LIMIT ?",
+        lambda row: _store_executive_record_in_vault(
+            user={"username": "legacy-migration"},
+            record_type="executive_meeting_record",
+            name=f"Executive Meeting — {row['title']}",
+            classification="confidential",
+            protection_profile="VAULT-ENVELOPE",
+            payload={
+                "title": row["title"],
+                "meeting_type": row["meeting_type"],
+                "scheduled_for": row["scheduled_for"],
+                "guests": row["guests"],
+                "location_mode": row["location_mode"],
+                "protected_notes": _decrypt(row["notes_ciphertext"]) if row["notes_ciphertext"] else "",
+                "created_by_account_id": row["created_by"],
+                "created_at": row["created_at"],
+                "legacy_migration": True,
+            },
+        ),
+        "UPDATE executive_meetings SET vault_object_id=? WHERE id=?"
+    )
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("UPDATE executive_meetings SET notes_ciphertext=NULL WHERE vault_object_id IS NOT NULL")
+
+    migrate_table(
+        "principal_accounts",
+        "SELECT * FROM executive_principal_accounts WHERE vault_object_id IS NULL ORDER BY id LIMIT ?",
+        lambda row: _store_executive_record_in_vault(
+            user={"username": row["username"]},
+            record_type="executive_principal_account",
+            name=f"Executive Principal — {row['full_name']}",
+            classification="restricted",
+            protection_profile="VAULT-ENVELOPE",
+            payload={
+                "username": row["username"],
+                "role": row["role"],
+                "full_name": row["full_name"],
+                "created_at": row["created_at"],
+                "last_login": row["last_login"],
+                "mfa_enabled": bool(row["mfa_enabled"]),
+                "credential_material": "not copied to VAULT",
+                "legacy_migration": True,
+            },
+        ),
+        "UPDATE executive_principal_accounts SET vault_object_id=? WHERE id=?"
+    )
+
+    migrate_table(
+        "enrollment_codes",
+        "SELECT * FROM executive_enrollment_codes WHERE vault_object_id IS NULL ORDER BY id LIMIT ?",
+        lambda row: _store_executive_record_in_vault(
+            user={"username": "legacy-migration"},
+            record_type="executive_enrollment_code_issued",
+            name=f"Principal Enrollment Code — {_title(row['role'])}",
+            classification="restricted",
+            protection_profile="VAULT-ENVELOPE",
+            payload={
+                "role": row["role"],
+                "issued_by_account_id": row["issued_by"],
+                "created_at": row["created_at"],
+                "expires_at": row["expires_at"],
+                "used_at": row["used_at"],
+                "code_hash": row["code_hash"],
+                "legacy_migration": True,
+            },
+        ),
+        "UPDATE executive_enrollment_codes SET vault_object_id=? WHERE id=?"
+    )
+
+    migrate_table(
+        "recovery_codes",
+        "SELECT * FROM executive_recovery_codes WHERE vault_object_id IS NULL ORDER BY id LIMIT ?",
+        lambda row: _store_executive_record_in_vault(
+            user={"username": "legacy-migration"},
+            record_type="executive_recovery_code_record",
+            name=f"Executive Recovery Code Record — account {row['account_id']}",
+            classification="restricted",
+            protection_profile="VAULT-ENVELOPE",
+            payload={
+                "account_id": row["account_id"],
+                "code_hash": row["code_hash"],
+                "created_at": row["created_at"],
+                "used_at": row["used_at"],
+                "clear_code": "not copied to VAULT",
+                "legacy_migration": True,
+            },
+        ),
+        "UPDATE executive_recovery_codes SET vault_object_id=? WHERE id=?"
+    )
+
+    migrate_table(
+        "sessions",
+        "SELECT * FROM executive_sessions WHERE vault_object_id IS NULL ORDER BY created_at LIMIT ?",
+        lambda row: _store_executive_record_in_vault(
+            user={"username": row["username"]},
+            record_type="executive_session_record",
+            name=f"Executive Session — {row['username']}",
+            classification="restricted",
+            protection_profile="VAULT-ENVELOPE",
+            payload={
+                "session_id": row["id"],
+                "account_id": row["account_id"],
+                "username": row["username"],
+                "role": row["role"],
+                "user_agent": row["user_agent"],
+                "ip_address": row["ip_address"],
+                "created_at": row["created_at"],
+                "last_seen": row["last_seen"],
+                "expires_at": row["expires_at"],
+                "revoked_at": row["revoked_at"],
+                "legacy_migration": True,
+            },
+        ),
+        "UPDATE executive_sessions SET vault_object_id=? WHERE id=?"
+    )
+    return summary
+
+
 
 def _vault_health():
     try:
@@ -767,6 +992,48 @@ def enrollment_submit(code: str = Form(...), full_name: str = Form(...), usernam
     return RedirectResponse("/executive/login?error=Executive+account+created.+Please+sign+in.", status_code=303)
 
 
+def executive_vault_migration_page(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    if user["role"] != "president":
+        raise HTTPException(status_code=403, detail="President access required")
+    tables = {
+        "Secure communications": "executive_secure_messages",
+        "Executive archive": "executive_archive",
+        "Meetings": "executive_meetings",
+        "Principal accounts": "executive_principal_accounts",
+        "Enrollment codes": "executive_enrollment_codes",
+        "Recovery codes": "executive_recovery_codes",
+        "Sessions": "executive_sessions",
+    }
+    rows = []
+    with core.db_cursor() as cur:
+        for label, table in tables.items():
+            cur.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE vault_object_id IS NULL")
+            pending = cur.fetchone()["n"]
+            rows.append(f"<tr><th>{escape(label)}</th><td>{pending}</td></tr>")
+    body = f'''<section class="hero"><h2>Legacy <span class="gold">VAULT Migration</span></h2><p>Move pre-integration Executive Suite records into UNG-VAULT and remove locally retained protected bodies where applicable.</p></section>
+    <section class="panel" style="margin-top:16px"><table>{''.join(rows)}</table>
+    <form method="post" action="/executive/vault/migrate"><button>Run VAULT Migration Now</button></form>
+    <p style="color:#aebdcb;font-size:12px">Credentials themselves are never copied; only lifecycle metadata and hashes are migrated.</p></section>'''
+    return _shell(user, body)
+
+
+def executive_vault_migrate(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    if user["role"] != "president":
+        raise HTTPException(status_code=403, detail="President access required")
+    result = migrate_legacy_executive_records_to_vault()
+    core.log_action(None, user["username"], "executive_legacy_vault_migration", "vault", result["migrated"])
+    body = f'''<section class="hero"><h2>VAULT Migration <span class="gold">Complete</span></h2><p>Migrated {result["migrated"]} records; {result["failed"]} failed and remain eligible for retry.</p></section>
+    <section class="panel" style="margin-top:16px"><pre style="white-space:pre-wrap;color:#cbd6df">{escape(json.dumps(result, indent=2))}</pre>
+    <a href="/executive/vault/migration" style="color:#f0cc67">Return to migration status</a></section>'''
+    return _shell(user, body)
+
+
 
 def executive_vault_page(request: Request):
     user = _principal(request)
@@ -802,6 +1069,7 @@ def executive_vault_page(request: Request):
       <section class="panel"><h3>Security Boundary</h3><p style="color:#aebdcb;line-height:1.55">UNG-PRESIDENT does not store VAULT master keys, SCIF plaintext, or VAULT database records. This page is the executive front door; encryption, classification enforcement, SCIF controls, audit and SENTINEL event forwarding remain inside UNG-VAULT.</p></section>
     </div>
     <div class="grid">{card_html}</div>
+    {'<section class="panel" style="margin-top:16px"><h3>Legacy Record Migration</h3><p style="color:#aebdcb">Move older Executive Suite records into VAULT and eliminate locally retained protected bodies.</p><a href="/executive/vault/migration" style="color:#f0cc67;font-weight:700;text-decoration:none">Open Migration Control →</a></section>' if user["role"]=="president" else ''}
     <section class="panel" style="margin-top:16px"><h3>Executive Security Path</h3><p style="color:#aebdcb">Principal Portal → Secure Vault & SCIF → UNG-VAULT → Digital SCIF / protected files → SENTINEL security monitoring</p></section>'''
     return _shell(user, body)
 
@@ -1039,10 +1307,12 @@ def legacy_redirect():
 def apply_executive_suite(_core=None):
     init_schema()
     seed_principal_accounts_from_env()
-    paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/vault","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/security/sessions/revoke","/executive/security/sessions/revoke-others","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
+    paths={"/executive","/executive/vault/migration","/executive/vault/migrate","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/vault","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/security/sessions/revoke","/executive/security/sessions/revoke-others","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/vault", executive_vault_page, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/vault/migration", executive_vault_migration_page, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/vault/migrate", executive_vault_migrate, methods=["POST"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login_form, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/login", executive_login, methods=["POST"])
     core.app.add_api_route("/executive/mfa", executive_mfa_form, methods=["GET"], response_class=HTMLResponse)
