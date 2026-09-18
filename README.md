@@ -32,3 +32,15 @@ The Digital Executive Suite now includes a principal-only **Secure Vault & SCIF*
 - The Executive Suite checks VAULT service health and exposes executive shortcuts for protected documents, Digital SCIF, encrypted file exchange, redacted sharing, emergency revocation, and security activity.
 - Configure the backend location with `UNG_VAULT_BASE_URL`.
 - UNG-PRESIDENT does not store VAULT master keys or SCIF plaintext.
+
+
+## Executive record storage policy
+
+The Digital Executive Suite now treats UNG-VAULT as the authoritative encrypted store for newly created executive operational records.
+
+- Secure communications, executive archive entries and boardroom/private-suite meeting records are serialized and sent to UNG-VAULT over an HMAC-SHA256 signed service-to-service channel.
+- VAULT encrypts the complete record before persistence and returns a protected object ID.
+- UNG-PRESIDENT stores only local display/index metadata plus the VAULT object reference; message bodies and protected notes are no longer retained as local plaintext or local application ciphertext for new records.
+- Record creation is fail closed: if VAULT is unavailable or rejects the signed request, the Executive Suite does not create the local record.
+- Existing legacy records remain readable under their previous storage model until separately migrated.
+- Authentication/session state and password/MFA material remain operational identity state, not executive document records, and are not copied into VAULT as record payloads.
