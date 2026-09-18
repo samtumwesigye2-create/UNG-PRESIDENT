@@ -11,6 +11,8 @@ export const Route = createFileRoute('/')({ component: PresidentHome })
 const PRESIDENTIAL_STANDARD = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cMhdH8PnCuRMUuhn-17ua.png'
 const PRESIDENTIAL_SEAL = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cMhdH8PnCuRMUuhn-17ua.png'
 const HERO_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/0GNEy1EzABEvWsyoKN8b2.jpeg'
+const VICE_PRESIDENTIAL_STANDARD = '/static/images/vice-presidential-standard.jpg'
+const VICE_PRESIDENTIAL_SEAL = '/static/images/vice-presidential-standard.jpg'
 const CEREMONIAL_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cX1jvSh2aF8KtsBomeaSg.jpeg'
 
 export function PresidentHome() {
@@ -94,6 +96,15 @@ export function PresidentHome() {
         <div><h2>The Presidency at a glance</h2><p className="lead">This portal organizes the public work of the Presidency by constitutional action, national policy, public communication and State House engagement.</p></div>
         <img src={CEREMONIAL_PHOTO} alt="Presidential ceremonial imagery" className="ceremonial-image" />
       </div></section>
+
+      <section className="formal-section vice-presidency-section" id="vice-presidency"><div className="container">
+        <div className="section-head"><div><span className="section-kicker">Office of the Vice President</span><h2>Vice Presidential Standard & Seal</h2></div><p>Official visual identity of the Office of the Vice President.</p></div>
+        <div className="symbols-identity vice-president-symbols">
+          <div className="flag-display"><img src={VICE_PRESIDENTIAL_STANDARD} alt="Vice Presidential Standard" style={{width:'100%',height:'auto',display:'block'}} /></div>
+          <div><span className="section-kicker">Vice Presidential Standard</span><h3>Office of the Vice President</h3><p>The Vice Presidential Standard is presented here as part of the Presidency's official symbols collection.</p></div>
+          <div className="seal-display vice-president-seal-crop" aria-label="Vice Presidential Seal"><img src={VICE_PRESIDENTIAL_SEAL} alt="Vice Presidential Seal" style={{width:'100%',height:'100%',objectFit:'cover'}} /></div>
+        </div>
+      </section>
 
       <ExecutiveGovernmentDirectory offices={data?.executiveOffices} departments={data?.executiveDepartments} />
 
