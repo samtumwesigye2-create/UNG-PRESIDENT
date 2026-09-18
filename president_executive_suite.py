@@ -72,11 +72,29 @@ def _issue_session(row, request: Request):
     expires = now + timedelta(seconds=EXEC_MAX_AGE)
     user_agent = (request.headers.get("user-agent") or "")[:500]
     ip_address = request.client.host if request.client else ""
+    principal = {"username": row["username"]}
+    vault_id = _store_executive_record_in_vault(
+        user=principal,
+        record_type="executive_session_created",
+        name=f"Executive Session — {row['username']}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "session_id": session_id,
+            "account_id": row["id"],
+            "username": row["username"],
+            "role": row["role"],
+            "user_agent": user_agent,
+            "ip_address": ip_address,
+            "created_at": now.isoformat(),
+            "expires_at": expires.isoformat(),
+        },
+    )
     with core.db_cursor(commit=True) as cur:
         cur.execute("""INSERT INTO executive_sessions
-            (id,account_id,username,role,user_agent,ip_address,created_at,last_seen,expires_at)
-            VALUES(?,?,?,?,?,?,?,?,?)""",
-            (session_id,row["id"],row["username"],row["role"],user_agent,ip_address,now.isoformat(),now.isoformat(),expires.isoformat()))
+            (id,account_id,username,role,user_agent,ip_address,created_at,last_seen,expires_at,vault_object_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (session_id,row["id"],row["username"],row["role"],user_agent,ip_address,now.isoformat(),now.isoformat(),expires.isoformat(),vault_id))
     return _token(row["id"], row["username"], row["role"], session_id)
 
 
@@ -133,12 +151,14 @@ def init_schema():
             created_at TEXT NOT NULL,
             last_login TEXT,
             mfa_secret TEXT,
-            mfa_enabled INTEGER NOT NULL DEFAULT 0
+            mfa_enabled INTEGER NOT NULL DEFAULT 0,
+            vault_object_id TEXT
         )""")
         for ddl in (
             "ALTER TABLE executive_principal_accounts ADD COLUMN mfa_secret TEXT",
             "ALTER TABLE executive_principal_accounts ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE executive_principal_accounts ADD COLUMN password_changed_at TEXT",
+            "ALTER TABLE executive_principal_accounts ADD COLUMN vault_object_id TEXT",
         ):
             try:
                 cur.execute(ddl)
@@ -181,6 +201,9 @@ def init_schema():
             "ALTER TABLE executive_secure_messages ADD COLUMN vault_object_id TEXT",
             "ALTER TABLE executive_archive ADD COLUMN vault_object_id TEXT",
             "ALTER TABLE executive_meetings ADD COLUMN vault_object_id TEXT",
+            "ALTER TABLE executive_enrollment_codes ADD COLUMN vault_object_id TEXT",
+            "ALTER TABLE executive_recovery_codes ADD COLUMN vault_object_id TEXT",
+            "ALTER TABLE executive_sessions ADD COLUMN vault_object_id TEXT",
         ):
             try:
                 cur.execute(ddl)
@@ -193,14 +216,16 @@ def init_schema():
             issued_by INTEGER NOT NULL,
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL,
-            used_at TEXT
+            used_at TEXT,
+            vault_object_id TEXT
         )""")
         cur.execute("""CREATE TABLE IF NOT EXISTS executive_recovery_codes(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             account_id INTEGER NOT NULL,
             code_hash TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            used_at TEXT
+            used_at TEXT,
+            vault_object_id TEXT
         )""")
         cur.execute("""CREATE TABLE IF NOT EXISTS executive_sessions(
             id TEXT PRIMARY KEY,
@@ -212,7 +237,8 @@ def init_schema():
             created_at TEXT NOT NULL,
             last_seen TEXT NOT NULL,
             expires_at TEXT NOT NULL,
-            revoked_at TEXT
+            revoked_at TEXT,
+            vault_object_id TEXT
         )""")
 
 
@@ -229,10 +255,25 @@ def seed_principal_accounts_from_env():
             cur.execute("SELECT id FROM executive_principal_accounts WHERE username=?", (username,))
             if cur.fetchone():
                 continue
+            created_at = datetime.utcnow().isoformat()
+            vault_id = _store_executive_record_in_vault(
+                user={"username": username},
+                record_type="executive_principal_account",
+                name=f"Executive Principal — {full_name}",
+                classification="restricted",
+                protection_profile="VAULT-ENVELOPE",
+                payload={
+                    "username": username,
+                    "role": role,
+                    "full_name": full_name,
+                    "created_at": created_at,
+                    "credential_material": "stored only in executive identity store",
+                },
+            )
             salt = secrets.token_hex(16)
             cur.execute(
-                "INSERT INTO executive_principal_accounts(username,password_hash,salt,role,full_name,created_at) VALUES(?,?,?,?,?,?)",
-                (username, _hash_password(password, salt), salt, role, full_name, datetime.utcnow().isoformat()),
+                "INSERT INTO executive_principal_accounts(username,password_hash,salt,role,full_name,created_at,vault_object_id) VALUES(?,?,?,?,?,?,?)",
+                (username, _hash_password(password, salt), salt, role, full_name, created_at, vault_id),
             )
 
 
@@ -395,8 +436,17 @@ def executive_mfa_recovery(request: Request, recovery_code: str = Form(...)):
 def executive_logout(request: Request):
     user = _principal(request)
     if user:
+        revoked_at = datetime.utcnow().isoformat()
+        vault_event_id = _store_executive_record_in_vault(
+            user=user,
+            record_type="executive_session_logout",
+            name=f"Executive Session Logout — {user['username']}",
+            classification="restricted",
+            protection_profile="VAULT-ENVELOPE",
+            payload={"session_id": user["session_id"], "username": user["username"], "revoked_at": revoked_at},
+        )
         with core.db_cursor(commit=True) as cur:
-            cur.execute("UPDATE executive_sessions SET revoked_at=? WHERE id=?", (datetime.utcnow().isoformat(), user["session_id"]))
+            cur.execute("UPDATE executive_sessions SET revoked_at=?, vault_object_id=? WHERE id=?", (revoked_at, vault_event_id, user["session_id"]))
         core.log_action(None, user["username"], "executive_session_logout", "executive_sessions", user["session_id"])
     response = RedirectResponse("/executive/login", status_code=303)
     response.delete_cookie(EXEC_COOKIE, path="/")
@@ -423,10 +473,25 @@ def setup_submit(setup_code: str = Form(...), full_name: str = Form(...), userna
         cur.execute("SELECT COUNT(*) AS n FROM executive_principal_accounts")
         if cur.fetchone()["n"]:
             raise HTTPException(status_code=409, detail="Executive portal already initialized")
+    created_at = datetime.utcnow().isoformat()
+    vault_id = _store_executive_record_in_vault(
+        user={"username": username.strip()},
+        record_type="executive_principal_account",
+        name=f"Executive Principal — {full_name.strip()}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "username": username.strip(),
+            "role": role,
+            "full_name": full_name.strip(),
+            "created_at": created_at,
+            "credential_material": "stored only in executive identity store",
+        },
+    )
     salt = secrets.token_hex(16)
     with core.db_cursor(commit=True) as cur:
-        cur.execute("INSERT INTO executive_principal_accounts(username,password_hash,salt,role,full_name,created_at) VALUES(?,?,?,?,?,?)",
-                    (username.strip(), _hash_password(password, salt), salt, role, full_name.strip(), datetime.utcnow().isoformat()))
+        cur.execute("INSERT INTO executive_principal_accounts(username,password_hash,salt,role,full_name,created_at,vault_object_id) VALUES(?,?,?,?,?,?,?)",
+                    (username.strip(), _hash_password(password, salt), salt, role, full_name.strip(), created_at, vault_id))
     return RedirectResponse("/executive/login", status_code=303)
 
 
@@ -641,9 +706,23 @@ async def create_enrollment_code(request: Request):
     now = datetime.utcnow()
     from datetime import timedelta
     expires = now + timedelta(hours=hours)
+    vault_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_enrollment_code_issued",
+        name=f"Principal Enrollment Code — {_title(role)}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "role": role,
+            "issued_by": user["username"],
+            "created_at": now.isoformat(),
+            "expires_at": expires.isoformat(),
+            "code_hash": _hash_enrollment_code(code),
+        },
+    )
     with core.db_cursor(commit=True) as cur:
-        cur.execute("INSERT INTO executive_enrollment_codes(code_hash,role,issued_by,created_at,expires_at) VALUES(?,?,?,?,?)",
-                    (_hash_enrollment_code(code), role, user["account_id"], now.isoformat(), expires.isoformat()))
+        cur.execute("INSERT INTO executive_enrollment_codes(code_hash,role,issued_by,created_at,expires_at,vault_object_id) VALUES(?,?,?,?,?,?)",
+                    (_hash_enrollment_code(code), role, user["account_id"], now.isoformat(), expires.isoformat(), vault_id))
     body=f"""<section class="hero"><h2>One-Time Enrollment Code</h2><p>Give this code directly to the designated {_title(role)}. It is displayed only on this screen.</p></section><section class="panel" style="margin-top:16px;text-align:center"><div style="font:700 30px monospace;color:#f0d37b;letter-spacing:2px;padding:22px">{escape(code)}</div><p>Expires {escape(expires.isoformat())} UTC</p><a href="/executive/access" style="color:#d9bb62">Return to Principal Access</a></section>"""
     return _shell(user, body)
 
@@ -665,10 +744,25 @@ def enrollment_submit(code: str = Form(...), full_name: str = Form(...), usernam
         cur.execute("SELECT id FROM executive_principal_accounts WHERE role=? OR username=?", (row["role"], username.strip()))
         if cur.fetchone():
             raise HTTPException(status_code=409, detail="That principal role or username is already enrolled")
+    vault_id = _store_executive_record_in_vault(
+        user={"username": username.strip()},
+        record_type="executive_principal_account",
+        name=f"Executive Principal — {full_name.strip()}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "username": username.strip(),
+            "role": row["role"],
+            "full_name": full_name.strip(),
+            "created_at": now.isoformat(),
+            "enrolled_via_one_time_code": True,
+            "credential_material": "stored only in executive identity store",
+        },
+    )
     salt = secrets.token_hex(16)
     with core.db_cursor(commit=True) as cur:
-        cur.execute("INSERT INTO executive_principal_accounts(username,password_hash,salt,role,full_name,created_at) VALUES(?,?,?,?,?,?)",
-                    (username.strip(), _hash_password(password, salt), salt, row["role"], full_name.strip(), now.isoformat()))
+        cur.execute("INSERT INTO executive_principal_accounts(username,password_hash,salt,role,full_name,created_at,vault_object_id) VALUES(?,?,?,?,?,?,?)",
+                    (username.strip(), _hash_password(password, salt), salt, row["role"], full_name.strip(), now.isoformat(), vault_id))
         cur.execute("UPDATE executive_enrollment_codes SET used_at=? WHERE id=? AND used_at IS NULL", (now.isoformat(), row["id"]))
     return RedirectResponse("/executive/login?error=Executive+account+created.+Please+sign+in.", status_code=303)
 
@@ -768,7 +862,8 @@ def security_page(request: Request):
     <tr><th>Signed session validation and revocation</th><td>✓ Pass</td></tr>
     <tr><th>Password rotation invalidates all sessions</th><td>✓ Pass</td></tr>
     <tr><th>Authenticator MFA + recovery-code path</th><td>✓ Available</td></tr>
-    <tr><th>Encrypted Executive records</th><td>✓ Fernet protected</td></tr>
+    <tr><th>Encrypted Executive records</th><td>✓ VAULT authoritative storage</td></tr>
+    <tr><th>Security/account/session records mirrored to VAULT</th><td>✓ Enforced for new records</td></tr>
     </table></section>'''
     body=f"""<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h2>Executive <span class="gold">Security</span></h2><p>Manage your principal-only credential independently from Staff Portal accounts.</p></div></div></section>
 <div class="two"><section class="panel"><h3>Set / Change Executive Password</h3><form method="post" action="/executive/security/password"><label>Current password or one-time executive setup code</label><input type="password" name="current_password" autocomplete="current-password" required><p style="font-size:11px;color:#7f91a2;margin-top:-4px">For initial presidential setup, the one-time Executive Setup Code may be used instead of the temporary password.</p><label>New password</label><input type="password" name="new_password" minlength="14" autocomplete="new-password" required><label>Confirm new password</label><input type="password" name="confirm_password" minlength="14" autocomplete="new-password" required><button>Update Executive Password</button></form></section>
@@ -796,10 +891,25 @@ async def change_executive_password(request: Request):
     bootstrap_ok = bool(row) and user["role"] == "president" and bool(setup_code) and hmac.compare_digest(current.strip(), setup_code.strip())
     if not current_ok and not bootstrap_ok:
         raise HTTPException(status_code=403, detail="Current password or executive setup code is incorrect")
+    changed_at = datetime.utcnow().isoformat()
+    vault_event_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_password_changed",
+        name=f"Executive Credential Change — {user['username']}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "username": user["username"],
+            "account_id": user["account_id"],
+            "changed_at": changed_at,
+            "all_sessions_revoked": True,
+            "password_value": "not copied to VAULT",
+        },
+    )
     salt = secrets.token_hex(16)
     with core.db_cursor(commit=True) as cur:
-        cur.execute("UPDATE executive_principal_accounts SET password_hash=?, salt=?, password_changed_at=? WHERE id=?",
-                    (_hash_password(new, salt), salt, datetime.utcnow().isoformat(), user["account_id"]))
+        cur.execute("UPDATE executive_principal_accounts SET password_hash=?, salt=?, password_changed_at=?, vault_object_id=? WHERE id=?",
+                    (_hash_password(new, salt), salt, changed_at, vault_event_id, user["account_id"]))
     with core.db_cursor(commit=True) as cur:
         cur.execute("UPDATE executive_sessions SET revoked_at=? WHERE account_id=? AND revoked_at IS NULL",
                     (datetime.utcnow().isoformat(), user["account_id"]))
@@ -821,8 +931,22 @@ async def enable_executive_mfa(request: Request):
         row = cur.fetchone()
     if not row or not row["mfa_secret"] or not pyotp.TOTP(row["mfa_secret"]).verify(code, valid_window=1):
         raise HTTPException(status_code=400, detail="Invalid authenticator code")
+    vault_event_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_mfa_enabled",
+        name=f"Executive MFA Enabled — {user['username']}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "username": user["username"],
+            "account_id": user["account_id"],
+            "enabled_at": datetime.utcnow().isoformat(),
+            "factor_type": "TOTP",
+            "mfa_secret": "not copied to VAULT",
+        },
+    )
     with core.db_cursor(commit=True) as cur:
-        cur.execute("UPDATE executive_principal_accounts SET mfa_enabled=1 WHERE id=?", (user["account_id"],))
+        cur.execute("UPDATE executive_principal_accounts SET mfa_enabled=1, vault_object_id=? WHERE id=?", (vault_event_id, user["account_id"]))
     core.log_action(None, user["username"], "executive_mfa_enabled", "executive_principal_accounts", user["account_id"])
     return RedirectResponse("/executive/security", status_code=303)
 
@@ -834,11 +958,27 @@ async def generate_recovery_codes(request: Request):
         return RedirectResponse("/executive/login", status_code=303)
     codes = _new_recovery_codes(8)
     now = datetime.utcnow().isoformat()
+    code_hashes = [_hash_recovery_code(code) for code in codes]
+    vault_event_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_recovery_codes_generated",
+        name=f"Executive Recovery Codes — {user['username']}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "username": user["username"],
+            "account_id": user["account_id"],
+            "created_at": now,
+            "count": len(codes),
+            "code_hashes": code_hashes,
+            "clear_codes": "shown once to principal and not copied to VAULT",
+        },
+    )
     with core.db_cursor(commit=True) as cur:
         cur.execute("DELETE FROM executive_recovery_codes WHERE account_id=? AND used_at IS NULL", (user["account_id"],))
-        for code in codes:
-            cur.execute("INSERT INTO executive_recovery_codes(account_id,code_hash,created_at) VALUES(?,?,?)",
-                        (user["account_id"], _hash_recovery_code(code), now))
+        for code_hash in code_hashes:
+            cur.execute("INSERT INTO executive_recovery_codes(account_id,code_hash,created_at,vault_object_id) VALUES(?,?,?,?)",
+                        (user["account_id"], code_hash, now, vault_event_id))
     core.log_action(None, user["username"], "executive_recovery_codes_generated", "executive_principal_accounts", user["account_id"])
     code_html = "".join(f"<li style='font:700 20px monospace;color:#f0d37b;margin:8px 0'>{escape(code)}</li>" for code in codes)
     body=f"""<section class="hero"><h2>New <span class="gold">Recovery Codes</span></h2><p>Save these codes now. Each can be used once and they will not be shown again.</p></section><section class="panel" style="margin-top:16px"><ol style="columns:2;list-style-position:inside">{code_html}</ol><p style="color:#ffcf7a">Store these somewhere secure and separate from your authenticator device.</p><a href="/executive/security" style="color:#d9bb62">Return to Security</a></section>"""
@@ -854,10 +994,19 @@ async def revoke_executive_session(request: Request):
     session_id = str(form.get("session_id","")).strip()
     if not session_id or session_id == user["session_id"]:
         raise HTTPException(status_code=400, detail="Use Secure Logout to end the current session")
+    revoked_at = datetime.utcnow().isoformat()
+    vault_event_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_session_revoked",
+        name=f"Executive Session Revoked — {user['username']}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={"session_id": session_id, "account_id": user["account_id"], "revoked_at": revoked_at},
+    )
     with core.db_cursor(commit=True) as cur:
-        cur.execute("""UPDATE executive_sessions SET revoked_at=?
+        cur.execute("""UPDATE executive_sessions SET revoked_at=?, vault_object_id=?
                        WHERE id=? AND account_id=? AND revoked_at IS NULL""",
-                    (datetime.utcnow().isoformat(), session_id, user["account_id"]))
+                    (revoked_at, vault_event_id, session_id, user["account_id"]))
     core.log_action(None, user["username"], "executive_session_revoked", "executive_sessions", session_id)
     return RedirectResponse("/executive/security", status_code=303)
 
@@ -867,10 +1016,18 @@ async def revoke_other_executive_sessions(request: Request):
     if not user:
         return RedirectResponse("/executive/login", status_code=303)
     now = datetime.utcnow().isoformat()
+    vault_event_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_other_sessions_revoked",
+        name=f"Executive Other Sessions Revoked — {user['username']}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={"account_id": user["account_id"], "current_session_id": user["session_id"], "revoked_at": now},
+    )
     with core.db_cursor(commit=True) as cur:
-        cur.execute("""UPDATE executive_sessions SET revoked_at=?
+        cur.execute("""UPDATE executive_sessions SET revoked_at=?, vault_object_id=?
                        WHERE account_id=? AND id<>? AND revoked_at IS NULL""",
-                    (now, user["account_id"], user["session_id"]))
+                    (now, vault_event_id, user["account_id"], user["session_id"]))
     core.log_action(None, user["username"], "executive_other_sessions_revoked", "executive_sessions", user["account_id"])
     return RedirectResponse("/executive/security", status_code=303)
 
