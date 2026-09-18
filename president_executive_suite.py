@@ -27,6 +27,18 @@ VAULT_BASE_URL = os.environ.get("UNG_VAULT_BASE_URL", "https://ung-vault-product
 VAULT_INGEST_SECRET = os.environ.get("UNG_VAULT_INGEST_SECRET", "")
 EXEC_AUTO_VAULT_MIGRATE = os.environ.get("EXEC_AUTO_VAULT_MIGRATE", "1").strip().lower() not in {"0","false","no","off"}
 
+LEADERSHIP_DIRECTORY = [
+    {"key":"president","title":"President","group":"Executive","channel":"executive:president","note":"Head of the principal executive channel."},
+    {"key":"vice_president","title":"Vice President","group":"Executive","channel":"executive:vice-president","note":"Principal executive coordination channel."},
+    {"key":"prime_minister","title":"Prime Minister","group":"Executive","channel":"executive:prime-minister","note":"Principal government coordination channel."},
+    {"key":"defence_minister","title":"Defence Minister","group":"Cabinet","channel":"cabinet:defence","note":"Defence and national-security coordination."},
+    {"key":"foreign_minister","title":"Foreign Minister","group":"Cabinet","channel":"cabinet:foreign-affairs","note":"Foreign affairs and diplomatic coordination."},
+    {"key":"chief_of_police","title":"Chief of Police","group":"Security","channel":"security:police-chief","note":"National policing and security coordination."},
+    {"key":"communications_minister","title":"Communications Minister","group":"Cabinet","channel":"cabinet:communications","note":"Government communications and national communications policy coordination."},
+    {"key":"justice_minister","title":"Justice Minister","group":"Cabinet","channel":"cabinet:justice","note":"Justice-sector and legal-policy coordination."},
+    {"key":"supreme_court","title":"Supreme Court","group":"Judiciary","channel":"judiciary:supreme-court-liaison","note":"Institutional liaison channel only; not an executive command channel."},
+]
+
 
 def _fernet():
     key = base64.urlsafe_b64encode(hashlib.sha256((core.SECRET_KEY + "|executive-suite").encode()).digest())
@@ -715,7 +727,7 @@ main{{padding:26px 30px 38px;max-width:1450px}}.hero{{background:linear-gradient
 .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}}.card,.panel{{background:#0c1d2e;border:1px solid #233b53;border-radius:13px;padding:18px;box-shadow:0 5px 14px #0004}}.card h3{{color:#f0cc67;margin-top:0}}.card p{{color:#aebdcb;font-size:13px;line-height:1.45}}
 .two{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}}label{{display:block;font-size:12px;font-weight:700;margin:10px 0 5px;color:#c9d3dd}}input,textarea,select{{width:100%;background:#07131f;color:#eef3f8;border:1px solid #334a61;border-radius:7px;padding:10px}}textarea{{min-height:88px}}button{{margin-top:12px;background:#c7a247;color:#07111f;border:0;border-radius:7px;padding:10px 14px;font-weight:800}}table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}}th,td{{padding:9px;border-bottom:1px solid #24384b;text-align:left;vertical-align:top}}th{{color:#d9ba61}}.suite-planner{{background:linear-gradient(135deg,#0c1d2e,#102842);border-color:#34516d}}.suite-planner h3{{font:22px Georgia;color:#f0d37b;margin-bottom:4px}}.suite-planner .intro{{color:#9fb2c3;font-size:12px;margin:0 0 12px}}
 </style></head><body><div class="top"><div class="brand"><div class="brand-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h1>DIGITAL EXECUTIVE SUITE</h1><small>PRINCIPAL PORTAL · UNG-PRESIDENT</small></div></div><div class="who">{escape(_title(user["role"]).upper())}<br><strong>{escape(user["username"])}</strong></div></div>
-<div class="layout"><aside><a href="/executive">Executive Home</a><a href="/executive/vault">Secure Vault & SCIF</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a>{'<a href="/executive/access">Principal Access</a>' if user["role"]=="president" else ''}<a href="/executive/security">Security & Password</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
+<div class="layout"><aside><a href="/executive">Executive Home</a><a href="/executive/leadership">Leadership Network</a><a href="/executive/vault">Secure Vault & SCIF</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a>{'<a href="/executive/access">Principal Access</a>' if user["role"]=="president" else ''}<a href="/executive/security">Security & Password</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
     return HTMLResponse(page.replace("__PRES_SEAL__", core.PRES_SEAL_B64))
 
 
@@ -731,7 +743,7 @@ def dashboard(request: Request):
     arc_rows="".join(f"<tr><td>{r['id']}</td><td>{escape(r['title'])}</td><td>{escape(r['category'])}</td><td>{escape(r['retention'])}</td><td>{escape(r['vault_object_id'] or 'Legacy local record')}</td></tr>" for r in archive) or "<tr><td colspan='5'>No archived records yet.</td></tr>"
     mtg_rows="".join(f"<tr><td>{r['id']}</td><td>{escape(r['title'])}</td><td>{escape(r['meeting_type'])}</td><td>{escape(r['scheduled_for'] or '')}</td><td>{escape(r['location_mode'])}</td><td>{escape(r['vault_object_id'] or 'Legacy local record')}</td></tr>" for r in meetings) or "<tr><td colspan='6'>No executive meetings yet.</td></tr>"
     body=f"""<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h2>{escape(_title(user["role"]))} <span class="gold">Executive Workspace</span></h2><p>This is a principal-only portal. Staff Portal sessions are not accepted here. New executive communications, archive records and meeting records are saved only after UNG-VAULT confirms encrypted storage.</p></div></div></section>
-<div class="grid"><div class="card"><h3>Secure Vault & SCIF</h3><p>Executive access to UNG-VAULT protected documents, Digital SCIF, encrypted file exchange, redacted sharing and emergency revocation.</p><p><a href="/executive/vault" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Secure Vault →</a></p></div><div class="card"><h3>Executive Security Center</h3><p>Manage permanent credentials, authenticator MFA, and one-time recovery codes.</p><p><a href="/executive/security" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Security Center →</a></p></div><div class="card"><h3>Principal Identity</h3><p>Separate executive account and cookie namespace for the President, Vice President and Prime Minister.</p></div><div class="card"><h3>Encrypted Communications</h3><p>Every executive message is encrypted and stored in UNG-VAULT; the suite retains only its VAULT reference and display metadata.</p></div><div class="card"><h3>Cloud-First Archive</h3><p>Executive records and protected notes are encrypted in UNG-VAULT with local metadata linked to the VAULT object.</p></div><div class="card"><h3>Private Workspace</h3><p>Dedicated digital study for principal-level work.</p></div><div class="card"><h3>Formal Boardroom</h3><p>Plan boardroom, private dining and secure conference sessions.</p></div><div class="card"><h3>Segregated Access</h3><p>Staff accounts cannot authenticate into this portal.</p></div></div>
+<div class="grid"><div class="card"><h3>Executive Leadership Network</h3><p>Direct protected links to the Vice President, Prime Minister, key cabinet/security offices, and the Supreme Court institutional liaison channel.</p><p><a href="/executive/leadership" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Leadership Network →</a></p></div><div class="card"><h3>Secure Vault & SCIF</h3><p>Executive access to UNG-VAULT protected documents, Digital SCIF, encrypted file exchange, redacted sharing and emergency revocation.</p><p><a href="/executive/vault" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Secure Vault →</a></p></div><div class="card"><h3>Executive Security Center</h3><p>Manage permanent credentials, authenticator MFA, and one-time recovery codes.</p><p><a href="/executive/security" style="color:#f0cc67;text-decoration:none;font-weight:700">Open Security Center →</a></p></div><div class="card"><h3>Principal Identity</h3><p>Separate executive account and cookie namespace for the President, Vice President and Prime Minister.</p></div><div class="card"><h3>Encrypted Communications</h3><p>Every executive message is encrypted and stored in UNG-VAULT; the suite retains only its VAULT reference and display metadata.</p></div><div class="card"><h3>Cloud-First Archive</h3><p>Executive records and protected notes are encrypted in UNG-VAULT with local metadata linked to the VAULT object.</p></div><div class="card"><h3>Private Workspace</h3><p>Dedicated digital study for principal-level work.</p></div><div class="card"><h3>Formal Boardroom</h3><p>Plan boardroom, private dining and secure conference sessions.</p></div><div class="card"><h3>Segregated Access</h3><p>Staff accounts cannot authenticate into this portal.</p></div></div>
 <div class="two"><section class="panel" id="comms"><h3>Secure Communications</h3><form method="post" action="/executive/messages"><label>Recipient / channel</label><input name="recipient" required><label>Subject</label><input name="subject" required><label>Priority</label><select name="priority"><option>normal</option><option>high</option><option>urgent</option></select><label>Message</label><textarea name="message" required></textarea><button>Encrypt & Save</button></form><table><tr><th>ID</th><th>Recipient</th><th>Subject</th><th>Priority</th><th>VAULT object</th></tr>{msg_rows}</table></section>
 <section class="panel" id="archive"><h3>Executive Archive</h3><form method="post" action="/executive/archive"><label>Record title</label><input name="title" required><label>Reference</label><input name="record_reference"><label>Category</label><select name="category"><option>Executive Record</option><option>Briefing</option><option>Correspondence</option><option>Meeting Record</option><option>Digital Asset</option></select><label>Retention</label><select name="retention"><option>Permanent</option><option>Presidential Term</option><option>Operational</option></select><label>Protected notes</label><textarea name="notes"></textarea><button>Capture Record</button></form><table><tr><th>ID</th><th>Title</th><th>Category</th><th>Retention</th><th>VAULT object</th></tr>{arc_rows}</table></section></div>
 <section class="panel suite-planner" id="meetings" style="margin-top:16px"><h3>Boardroom / Private Suite Planner</h3><p class="intro">Plan executive boardroom sessions, private dining engagements, secure conferences, and principal workspace appointments.</p><form method="post" action="/executive/meetings"><div class="two"><div><label>Title</label><input name="title" required><label>Type</label><select name="meeting_type"><option>Executive Boardroom</option><option>Private Dining</option><option>Presidential Study</option><option>Secure Video Conference</option></select><label>Scheduled for</label><input type="datetime-local" name="scheduled_for"></div><div><label>Guests</label><input name="guests"><label>Location / mode</label><select name="location_mode"><option>Private Boardroom</option><option>Private Dining Room</option><option>Executive Office</option><option>Secure Remote</option></select><label>Protected notes</label><textarea name="notes"></textarea></div></div><button>Schedule Executive Session</button></form><table><tr><th>ID</th><th>Title</th><th>Type</th><th>Scheduled</th><th>Location</th><th>VAULT object</th></tr>{mtg_rows}</table></section>"""
@@ -1029,6 +1041,77 @@ def executive_vault_migrate(request: Request):
     return _shell(user, body)
 
 
+def executive_leadership_page(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    cards = []
+    for item in LEADERSHIP_DIRECTORY:
+        judicial = item["group"] == "Judiciary"
+        badge = "INSTITUTIONAL LIAISON" if judicial else item["group"].upper()
+        extra = " This preserves judicial independence by keeping the Supreme Court channel as liaison/coordination only." if judicial else ""
+        cards.append(f'''<section class="card">
+            <div style="font-size:10px;letter-spacing:1.4px;color:#7fa7c7;margin-bottom:8px">{escape(badge)}</div>
+            <h3>{escape(item["title"])}</h3>
+            <p>{escape(item["note"] + extra)}</p>
+            <form method="post" action="/executive/leadership/message">
+                <input type="hidden" name="recipient_key" value="{escape(item["key"])}">
+                <label>Subject</label><input name="subject" required>
+                <label>Priority</label><select name="priority"><option>normal</option><option>high</option><option>urgent</option></select>
+                <label>Secure message</label><textarea name="message" required></textarea>
+                <button>Encrypt & Send to VAULT</button>
+            </form>
+        </section>''')
+    body = f'''<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64__PRES_SEAL__" alt="Presidential Seal"></div>
+    <div><h2>Executive <span class="gold">Leadership Network</span></h2>
+    <p>Direct protected links among the President, principal executive officers, key cabinet/security offices, and the Supreme Court institutional liaison channel.</p></div></div></section>
+    <section class="panel" style="margin-top:16px"><h3>Network Rules</h3>
+    <p style="color:#aebdcb">All messages are encrypted and stored in UNG-VAULT before the local record is created. Cabinet and security channels support executive coordination. The Supreme Court channel is an institutional liaison path and is not treated as an executive command relationship.</p></section>
+    <div class="grid">{''.join(cards)}</div>'''
+    return _shell(user, body.replace("__PRES_SEAL__", core.PRES_SEAL_B64))
+
+
+async def executive_leadership_message(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    form = await request.form()
+    key = str(form.get("recipient_key", "")).strip()
+    subject = str(form.get("subject", "")).strip()
+    priority = str(form.get("priority", "normal")).strip()
+    message = str(form.get("message", "")).strip()
+    target = next((x for x in LEADERSHIP_DIRECTORY if x["key"] == key), None)
+    if not target or not subject or not message:
+        raise HTTPException(status_code=400, detail="Invalid leadership message")
+    created_at = datetime.utcnow().isoformat()
+    vault_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="executive_leadership_message",
+        name=f"Leadership Communication — {target['title']} — {subject}",
+        classification="confidential",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "recipient_key": target["key"],
+            "recipient_title": target["title"],
+            "recipient_group": target["group"],
+            "channel": target["channel"],
+            "subject": subject,
+            "priority": priority,
+            "message": message,
+            "created_by": user["username"],
+            "created_at": created_at,
+            "judicial_liaison_only": target["group"] == "Judiciary",
+        },
+    )
+    with core.db_cursor(commit=True) as cur:
+        cur.execute(
+            "INSERT INTO executive_secure_messages(recipient,subject,ciphertext,priority,created_by,created_at,vault_object_id) VALUES(?,?,?,?,?,?,?)",
+            (target["channel"], subject, "VAULT:" + vault_id, priority, user["account_id"], created_at, vault_id),
+        )
+    core.log_action(None, user["username"], "executive_leadership_message_stored_in_vault", "vault_object", vault_id)
+    return RedirectResponse("/executive/leadership", status_code=303)
+
+
 
 def executive_vault_page(request: Request):
     user = _principal(request)
@@ -1314,9 +1397,11 @@ def apply_executive_suite(_core=None):
             }, separators=(",", ":")), flush=True)
         except Exception as exc:
             print("EXEC_VAULT_MIGRATION_ERROR=" + type(exc).__name__, flush=True)
-    paths={"/executive","/executive/vault/migration","/executive/vault/migrate","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/vault","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/security/sessions/revoke","/executive/security/sessions/revoke-others","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
+    paths={"/executive","/executive/leadership","/executive/leadership/message","/executive/vault/migration","/executive/vault/migrate","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/vault","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/security/sessions/revoke","/executive/security/sessions/revoke-others","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/leadership", executive_leadership_page, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/leadership/message", executive_leadership_message, methods=["POST"])
     core.app.add_api_route("/executive/vault", executive_vault_page, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/vault/migration", executive_vault_migration_page, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/vault/migrate", executive_vault_migrate, methods=["POST"], response_class=HTMLResponse)
