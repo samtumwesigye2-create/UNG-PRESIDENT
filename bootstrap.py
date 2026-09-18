@@ -31,6 +31,8 @@ if __name__ == "__main__":
     president_nsc.apply_nsc(core)
     import president_un_affairs
     president_un_affairs.apply_un_affairs(core)
+    import president_executive_suite
+    president_executive_suite.apply_executive_suite(core)
     import uvicorn
     import password_reset
     uvicorn.run(password_reset.core.app, host="0.0.0.0", port=int(__import__('os').environ.get("PORT", "8000")))
