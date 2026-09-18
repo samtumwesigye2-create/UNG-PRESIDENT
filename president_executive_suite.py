@@ -1062,7 +1062,7 @@ def executive_leadership_page(request: Request):
                 <button>Encrypt & Send to VAULT</button>
             </form>
         </section>''')
-    body = f'''<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64__PRES_SEAL__" alt="Presidential Seal"></div>
+    body = f'''<section class="hero"><div class="hero-head"><div class="principal-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div>
     <div><h2>Executive <span class="gold">Leadership Network</span></h2>
     <p>Direct protected links among the President, principal executive officers, key cabinet/security offices, and the Supreme Court institutional liaison channel.</p></div></div></section>
     <section class="panel" style="margin-top:16px"><h3>Network Rules</h3>
