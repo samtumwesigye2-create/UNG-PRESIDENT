@@ -124,10 +124,10 @@ def _login_page(error=""):
 *{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 50% 0,#133457,#061321 56%);font-family:Arial,sans-serif;color:#eef3f8}}
 .box{{width:min(460px,92vw);background:#0b1c2d;border:1px solid #294158;border-radius:18px;padding:34px;box-shadow:0 24px 70px #0008}}.crest{{width:78px;height:78px;border:2px solid #cbaa4d;border-radius:50%;display:grid;place-items:center;margin:0 auto 18px;overflow:hidden;background:#071522}}.crest img{{width:100%;height:100%;object-fit:cover;display:block}}
 h1{{font:28px Georgia;margin:0;text-align:center}}.sub{{text-align:center;color:#c3a95d;letter-spacing:2px;font-size:11px;margin:7px 0 26px}}label{{display:block;font-size:12px;font-weight:700;margin:12px 0 5px;color:#cbd6df}}input{{width:100%;padding:12px;background:#07121d;border:1px solid #334a61;border-radius:8px;color:white;font-size:16px}}button{{width:100%;margin-top:18px;padding:12px;background:#c9a84b;border:0;border-radius:8px;font-weight:800;color:#07111f}}.err{{background:#4a1820;border:1px solid #7c2b38;padding:10px;border-radius:8px;margin-bottom:14px}}.note{{font-size:11px;color:#7f91a2;text-align:center;margin-top:16px}}
-</style></head><body><div class="box"><div class="crest"><img src="data:image/png;base64,{{PRES_SEAL}}" alt="Presidential Seal"></div><h1>Digital Executive Suite</h1><div class="sub">PRINCIPAL ACCESS · REPUBLIC OF UGANDA</div>{err}
+</style></head><body><div class="box"><div class="crest"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><h1>Digital Executive Suite</h1><div class="sub">PRINCIPAL ACCESS · REPUBLIC OF UGANDA</div>{err}
 <form method="post" action="/executive/login"><label>Executive username</label><input name="username" autocomplete="username" required><label>Password</label><input type="password" name="password" autocomplete="current-password" required><button>Enter Executive Portal</button></form>
 <div class="note">President · Vice President · Prime Minister only</div></div></body></html>"""
-    page = page.replace("{{PRES_SEAL}}", core.PRES_SEAL_B64)
+    page = page.replace("__PRES_SEAL__", core.PRES_SEAL_B64)
     return HTMLResponse(page)
 
 
