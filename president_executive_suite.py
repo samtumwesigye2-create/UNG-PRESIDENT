@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 import ung_president as core
 
 EXEC_COOKIE = "executive_session"
+LEADERSHIP_COOKIE = "leadership_office_session"
 EXEC_MAX_AGE = 60 * 60 * 8
 EXEC_ROLES = {"president", "vice_president", "prime_minister"}
 VAULT_BASE_URL = os.environ.get("UNG_VAULT_BASE_URL", "https://ung-vault-production.up.railway.app").rstrip("/")
@@ -109,6 +110,77 @@ def _issue_session(row, request: Request):
             VALUES(?,?,?,?,?,?,?,?,?,?)""",
             (session_id,row["id"],row["username"],row["role"],user_agent,ip_address,now.isoformat(),now.isoformat(),expires.isoformat(),vault_id))
     return _token(row["id"], row["username"], row["role"], session_id)
+
+
+def _leadership_token(account_id: int, username: str, office_key: str, session_id: str) -> str:
+    issued = int(time.time())
+    payload = f"leadership|{account_id}|{username}|{office_key}|{session_id}|{issued}"
+    sig = hmac.new(core.SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return base64.urlsafe_b64encode(f"{payload}|{sig}".encode()).decode()
+
+
+def _verify_leadership_token(token: str):
+    try:
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
+        purpose, account_id, username, office_key, session_id, issued, sig = raw.split("|")
+        if purpose != "leadership":
+            return None
+        payload = f"{purpose}|{account_id}|{username}|{office_key}|{session_id}|{issued}"
+        expected = hmac.new(core.SECRET_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected) or int(time.time()) - int(issued) > EXEC_MAX_AGE:
+            return None
+        return {"account_id": int(account_id), "username": username, "office_key": office_key, "session_id": session_id}
+    except Exception:
+        return None
+
+
+def _leadership_principal(request: Request):
+    token = request.cookies.get(LEADERSHIP_COOKIE)
+    user = _verify_leadership_token(token) if token else None
+    if not user:
+        return None
+    with core.db_cursor() as cur:
+        cur.execute("""SELECT id,expires_at,revoked_at FROM executive_leadership_sessions
+                       WHERE id=? AND account_id=?""", (user["session_id"], user["account_id"]))
+        session = cur.fetchone()
+    if not session or session["revoked_at"] or datetime.fromisoformat(session["expires_at"]) < datetime.utcnow():
+        return None
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("UPDATE executive_leadership_sessions SET last_seen=? WHERE id=?",
+                    (datetime.utcnow().isoformat(), user["session_id"]))
+    return user
+
+
+def _issue_leadership_session(row, request: Request):
+    from datetime import timedelta
+    session_id = secrets.token_hex(24)
+    now = datetime.utcnow()
+    expires = now + timedelta(seconds=EXEC_MAX_AGE)
+    user_agent = (request.headers.get("user-agent") or "")[:500]
+    ip_address = request.client.host if request.client else ""
+    vault_id = _store_executive_record_in_vault(
+        user={"username": row["username"]},
+        record_type="leadership_office_session_created",
+        name=f"Leadership Office Session — {row['office_key']}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "session_id": session_id,
+            "account_id": row["id"],
+            "username": row["username"],
+            "office_key": row["office_key"],
+            "user_agent": user_agent,
+            "ip_address": ip_address,
+            "created_at": now.isoformat(),
+            "expires_at": expires.isoformat(),
+        },
+    )
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("""INSERT INTO executive_leadership_sessions
+            (id,account_id,username,office_key,user_agent,ip_address,created_at,last_seen,expires_at,vault_object_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (session_id,row["id"],row["username"],row["office_key"],user_agent,ip_address,now.isoformat(),now.isoformat(),expires.isoformat(),vault_id))
+    return _leadership_token(row["id"], row["username"], row["office_key"], session_id)
 
 
 
@@ -238,6 +310,40 @@ def init_schema():
             code_hash TEXT NOT NULL,
             created_at TEXT NOT NULL,
             used_at TEXT,
+            vault_object_id TEXT
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS executive_leadership_accounts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            office_key TEXT UNIQUE NOT NULL,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_login TEXT,
+            vault_object_id TEXT
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS executive_leadership_enrollment_codes(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            office_key TEXT NOT NULL,
+            code_hash TEXT UNIQUE NOT NULL,
+            issued_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            vault_object_id TEXT
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS executive_leadership_sessions(
+            id TEXT PRIMARY KEY,
+            account_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            office_key TEXT NOT NULL,
+            user_agent TEXT,
+            ip_address TEXT,
+            created_at TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            revoked_at TEXT,
             vault_object_id TEXT
         )""")
         cur.execute("""CREATE TABLE IF NOT EXISTS executive_leadership_threads(
@@ -1052,6 +1158,222 @@ def executive_vault_migrate(request: Request):
     <section class="panel" style="margin-top:16px"><pre style="white-space:pre-wrap;color:#cbd6df">{escape(json.dumps(result, indent=2))}</pre>
     <a href="/executive/vault/migration" style="color:#f0cc67">Return to migration status</a></section>'''
     return _shell(user, body)
+def _hash_leadership_code(code: str) -> str:
+    return hmac.new(core.SECRET_KEY.encode(), ("leadership-enroll|" + code).encode(), hashlib.sha256).hexdigest()
+
+
+def executive_leadership_access(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    if user["role"] != "president":
+        raise HTTPException(status_code=403, detail="President access required")
+    with core.db_cursor() as cur:
+        cur.execute("SELECT office_key,username,display_name,last_login FROM executive_leadership_accounts ORDER BY office_key")
+        accounts = {r["office_key"]: r for r in cur.fetchall()}
+    rows = []
+    for item in LEADERSHIP_DIRECTORY:
+        if item["key"] in {"president","vice_president","prime_minister"}:
+            continue
+        acct = accounts.get(item["key"])
+        state = f"Enrolled · {escape(acct['username'])}" if acct else "Not enrolled"
+        action = "" if acct else f'''<form method="post" action="/executive/leadership/access/code">
+            <input type="hidden" name="office_key" value="{escape(item["key"])}"><button>Issue Enrollment Code</button></form>'''
+        rows.append(f"<tr><th>{escape(item['title'])}</th><td>{state}</td><td>{action}</td></tr>")
+    body=f'''<section class="hero"><h2>Leadership <span class="gold">Office Access</span></h2>
+    <p>Issue one-time enrollment codes to designated cabinet, security and judicial-liaison offices.</p></section>
+    <section class="panel" style="margin-top:16px"><table><tr><th>Office</th><th>Status</th><th>Action</th></tr>{''.join(rows)}</table>
+    <p style="color:#aebdcb;font-size:12px">The Supreme Court account is an institutional liaison account only and does not create an executive command relationship.</p></section>'''
+    return _shell(user, body)
+
+
+async def executive_leadership_issue_code(request: Request):
+    user = _principal(request)
+    if not user:
+        return RedirectResponse("/executive/login", status_code=303)
+    if user["role"] != "president":
+        raise HTTPException(status_code=403, detail="President access required")
+    form = await request.form()
+    office_key = str(form.get("office_key","")).strip()
+    target = next((x for x in LEADERSHIP_DIRECTORY if x["key"] == office_key), None)
+    if not target or office_key in {"president","vice_president","prime_minister"}:
+        raise HTTPException(status_code=400, detail="Invalid leadership office")
+    with core.db_cursor() as cur:
+        cur.execute("SELECT id FROM executive_leadership_accounts WHERE office_key=?", (office_key,))
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="Office account already enrolled")
+    from datetime import timedelta
+    code = "LINK-" + "-".join(secrets.token_hex(2).upper() for _ in range(3))
+    now = datetime.utcnow()
+    expires = now + timedelta(hours=8)
+    code_hash = _hash_leadership_code(code)
+    vault_id = _store_executive_record_in_vault(
+        user=user,
+        record_type="leadership_office_enrollment_code",
+        name=f"Leadership Enrollment — {target['title']}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "office_key": office_key,
+            "office_title": target["title"],
+            "issued_by": user["username"],
+            "created_at": now.isoformat(),
+            "expires_at": expires.isoformat(),
+            "code_hash": code_hash,
+        },
+    )
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("""INSERT INTO executive_leadership_enrollment_codes
+            (office_key,code_hash,issued_by,created_at,expires_at,vault_object_id)
+            VALUES(?,?,?,?,?,?)""",
+            (office_key,code_hash,user["account_id"],now.isoformat(),expires.isoformat(),vault_id))
+    body=f'''<section class="hero"><h2>{escape(target["title"])} <span class="gold">Enrollment Code</span></h2>
+    <p>Provide this code directly to the designated office. It expires in 8 hours and can be used once.</p></section>
+    <section class="panel" style="margin-top:16px;text-align:center"><div style="font:700 28px monospace;color:#f0d37b;padding:22px">{escape(code)}</div>
+    <p><a href="/leadership/enroll" style="color:#f0cc67">Office enrollment page</a></p></section>'''
+    return _shell(user, body)
+
+
+def leadership_office_enroll_form():
+    return HTMLResponse("""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Leadership Office Enrollment</title><style>body{font-family:Arial;background:#071522;color:#fff;display:grid;place-items:center;min-height:100vh}.b{width:min(480px,92vw);background:#0c2033;padding:28px;border:1px solid #385069;border-radius:14px}input{width:100%;padding:11px;margin:5px 0 12px;box-sizing:border-box}button{padding:12px;width:100%;background:#caa84b;border:0;font-weight:bold}</style></head>
+    <body><div class="b"><h2>Leadership Office Enrollment</h2><form method="post" action="/leadership/enroll">
+    <label>One-time enrollment code</label><input type="password" name="code" required>
+    <label>Display name</label><input name="display_name" required>
+    <label>Username</label><input name="username" required>
+    <label>Password</label><input type="password" name="password" minlength="14" required>
+    <button>Enroll Office Account</button></form></div></body></html>""")
+
+
+def leadership_office_enroll(code: str = Form(...), display_name: str = Form(...), username: str = Form(...), password: str = Form(...)):
+    if len(password) < 14:
+        raise HTTPException(status_code=400, detail="Password must be at least 14 characters")
+    now = datetime.utcnow()
+    code_hash = _hash_leadership_code(code.strip())
+    with core.db_cursor() as cur:
+        cur.execute("SELECT * FROM executive_leadership_enrollment_codes WHERE code_hash=?", (code_hash,))
+        row = cur.fetchone()
+    if not row or row["used_at"] or datetime.fromisoformat(row["expires_at"]) < now:
+        raise HTTPException(status_code=403, detail="Invalid or expired leadership enrollment code")
+    target = next((x for x in LEADERSHIP_DIRECTORY if x["key"] == row["office_key"]), None)
+    if not target:
+        raise HTTPException(status_code=400, detail="Unknown leadership office")
+    vault_id = _store_executive_record_in_vault(
+        user={"username": username.strip()},
+        record_type="leadership_office_account",
+        name=f"Leadership Office Account — {target['title']}",
+        classification="restricted",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "office_key": row["office_key"],
+            "office_title": target["title"],
+            "display_name": display_name.strip(),
+            "username": username.strip(),
+            "created_at": now.isoformat(),
+            "credential_material": "stored only in leadership identity store",
+        },
+    )
+    salt = secrets.token_hex(16)
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("""INSERT INTO executive_leadership_accounts
+            (office_key,username,password_hash,salt,display_name,created_at,vault_object_id)
+            VALUES(?,?,?,?,?,?,?)""",
+            (row["office_key"],username.strip(),_hash_password(password,salt),salt,display_name.strip(),now.isoformat(),vault_id))
+        cur.execute("UPDATE executive_leadership_enrollment_codes SET used_at=? WHERE id=? AND used_at IS NULL",
+                    (now.isoformat(),row["id"]))
+    return RedirectResponse("/leadership/login", status_code=303)
+
+
+def leadership_office_login_form():
+    return HTMLResponse("""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Leadership Secure Link</title><style>body{font-family:Arial;background:#071522;color:#fff;display:grid;place-items:center;min-height:100vh}.b{width:min(440px,92vw);background:#0c2033;padding:28px;border:1px solid #385069;border-radius:14px}input{width:100%;padding:12px;margin:5px 0 12px;box-sizing:border-box}button{padding:12px;width:100%;background:#caa84b;border:0;font-weight:bold}</style></head>
+    <body><div class="b"><h2>Leadership Secure Link</h2><form method="post" action="/leadership/login">
+    <label>Username</label><input name="username" required autocomplete="username">
+    <label>Password</label><input type="password" name="password" required autocomplete="current-password">
+    <button>Open Secure Office Channel</button></form></div></body></html>""")
+
+
+def leadership_office_login(request: Request, username: str = Form(...), password: str = Form(...)):
+    with core.db_cursor() as cur:
+        cur.execute("SELECT * FROM executive_leadership_accounts WHERE username=?", (username.strip(),))
+        row = cur.fetchone()
+    if not row or not _verify_password(password,row["password_hash"],row["salt"]):
+        raise HTTPException(status_code=403, detail="Invalid leadership office credentials")
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("UPDATE executive_leadership_accounts SET last_login=? WHERE id=?",
+                    (datetime.utcnow().isoformat(),row["id"]))
+    token = _issue_leadership_session(row, request)
+    response = RedirectResponse("/leadership", status_code=303)
+    response.set_cookie(LEADERSHIP_COOKIE, token, httponly=True, samesite="strict",
+                        secure=bool(os.environ.get("RAILWAY_ENVIRONMENT_ID")), max_age=EXEC_MAX_AGE, path="/")
+    return response
+
+
+def leadership_office_home(request: Request):
+    user = _leadership_principal(request)
+    if not user:
+        return RedirectResponse("/leadership/login", status_code=303)
+    target = next((x for x in LEADERSHIP_DIRECTORY if x["key"] == user["office_key"]), None)
+    with core.db_cursor() as cur:
+        cur.execute("""SELECT * FROM executive_leadership_threads WHERE office_key=?
+                       ORDER BY id DESC LIMIT 50""",(user["office_key"],))
+        rows=cur.fetchall()
+    tr="".join(f"<tr><td>{r['direction']}</td><td>{escape(r['subject'])}</td><td>{escape(r['priority'])}</td><td>{escape(r['status'])}</td><td>{escape(r['created_at'])}</td></tr>" for r in rows) or "<tr><td colspan='5'>No messages yet.</td></tr>"
+    return HTMLResponse(f'''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(target["title"] if target else user["office_key"])}</title>
+    <style>body{{font-family:Arial;background:#071522;color:#eef3f8;margin:0;padding:28px}}main{{max-width:980px;margin:auto}}.p{{background:#0c2033;padding:22px;border:1px solid #385069;border-radius:14px;margin-bottom:16px}}input,textarea,select{{width:100%;padding:10px;box-sizing:border-box;margin:5px 0 12px;background:#07131f;color:#fff;border:1px solid #334a61}}button{{background:#caa84b;border:0;padding:11px 14px;font-weight:bold}}table{{width:100%;border-collapse:collapse}}td,th{{border-bottom:1px solid #294158;padding:9px;text-align:left}}</style></head>
+    <body><main><section class="p"><h1>{escape(target["title"] if target else user["office_key"])} Secure Link</h1>
+    <p>Protected office-to-President communication. Message bodies are encrypted in UNG-VAULT.</p>
+    <form method="post" action="/leadership/reply"><label>Subject</label><input name="subject" required><label>Priority</label>
+    <select name="priority"><option>normal</option><option>high</option><option>urgent</option></select><label>Message</label><textarea name="message" required></textarea><button>Encrypt & Send Reply</button></form></section>
+    <section class="p"><h3>Channel Ledger</h3><table><tr><th>Direction</th><th>Subject</th><th>Priority</th><th>Status</th><th>Time</th></tr>{tr}</table></section>
+    <p><a href="/leadership/logout" style="color:#f0cc67">Secure Logout</a></p></main></body></html>''')
+
+
+async def leadership_office_reply(request: Request):
+    user = _leadership_principal(request)
+    if not user:
+        return RedirectResponse("/leadership/login", status_code=303)
+    form=await request.form()
+    subject=str(form.get("subject","")).strip()
+    priority=str(form.get("priority","normal")).strip()
+    message=str(form.get("message","")).strip()
+    if not subject or not message:
+        raise HTTPException(status_code=400, detail="Subject and message required")
+    target=next((x for x in LEADERSHIP_DIRECTORY if x["key"]==user["office_key"]),None)
+    created_at=datetime.utcnow().isoformat()
+    vault_id=_store_executive_record_in_vault(
+        user=user,
+        record_type="leadership_office_reply",
+        name=f"{target['title'] if target else user['office_key']} Reply — {subject}",
+        classification="confidential",
+        protection_profile="VAULT-ENVELOPE",
+        payload={
+            "office_key":user["office_key"],
+            "office_title":target["title"] if target else user["office_key"],
+            "subject":subject,"priority":priority,"message":message,
+            "sender":user["username"],"created_at":created_at,
+            "judicial_liaison_only": bool(target and target["group"]=="Judiciary"),
+        },
+    )
+    with core.db_cursor(commit=True) as cur:
+        cur.execute("""INSERT INTO executive_leadership_threads
+            (office_key,subject,priority,direction,sender,status,vault_object_id,created_at)
+            VALUES(?,?,?,?,?,?,?,?)""",
+            (user["office_key"],subject,priority,"inbound",user["username"],"delivered",vault_id,created_at))
+    return RedirectResponse("/leadership", status_code=303)
+
+
+def leadership_office_logout(request: Request):
+    user=_leadership_principal(request)
+    if user:
+        now=datetime.utcnow().isoformat()
+        with core.db_cursor(commit=True) as cur:
+            cur.execute("UPDATE executive_leadership_sessions SET revoked_at=? WHERE id=?",(now,user["session_id"]))
+    response=RedirectResponse("/leadership/login",status_code=303)
+    response.delete_cookie(LEADERSHIP_COOKIE,path="/")
+    return response
+
+
 
 def executive_leadership_inbox(request: Request, office_key: str):
     user = _principal(request)
@@ -1103,6 +1425,7 @@ def executive_leadership_page(request: Request):
     <p>Direct protected links among the President, principal executive officers, key cabinet/security offices, and the Supreme Court institutional liaison channel.</p></div></div></section>
     <section class="panel" style="margin-top:16px"><h3>Network Rules</h3>
     <p style="color:#aebdcb">All messages are encrypted and stored in UNG-VAULT before the local record is created. Cabinet and security channels support executive coordination. The Supreme Court channel is an institutional liaison path and is not treated as an executive command relationship.</p></section>
+    {'<section class="panel" style="margin-top:16px"><h3>Office Enrollment</h3><p style="color:#aebdcb">Create secure office accounts for cabinet, police and judicial-liaison participants.</p><a href="/executive/leadership/access" style="color:#f0cc67;font-weight:700;text-decoration:none">Manage Office Access →</a></section>' if user["role"]=="president" else ''}
     <div class="grid">{''.join(cards)}</div>'''
     return _shell(user, body.replace("__PRES_SEAL__", core.PRES_SEAL_B64))
 
@@ -1437,10 +1760,19 @@ def apply_executive_suite(_core=None):
             }, separators=(",", ":")), flush=True)
         except Exception as exc:
             print("EXEC_VAULT_MIGRATION_ERROR=" + type(exc).__name__, flush=True)
-    paths={"/executive","/executive/leadership","/executive/leadership/message","/executive/vault/migration","/executive/vault/migrate","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/vault","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/security/sessions/revoke","/executive/security/sessions/revoke-others","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
+    paths={"/executive","/executive/leadership","/executive/leadership/message","/executive/leadership/access","/executive/leadership/access/code","/leadership","/leadership/login","/leadership/enroll","/leadership/reply","/leadership/logout","/executive/vault/migration","/executive/vault/migrate","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/executive/access","/executive/access/codes","/executive/enroll","/executive/vault","/executive/security","/executive/security/password","/executive/security/mfa/enable","/executive/security/recovery-codes","/executive/security/sessions/revoke","/executive/security/sessions/revoke-others","/executive/mfa","/executive/mfa/recovery","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/leadership", executive_leadership_page, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/leadership/access", executive_leadership_access, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/executive/leadership/access/code", executive_leadership_issue_code, methods=["POST"], response_class=HTMLResponse)
+    core.app.add_api_route("/leadership/enroll", leadership_office_enroll_form, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/leadership/enroll", leadership_office_enroll, methods=["POST"])
+    core.app.add_api_route("/leadership/login", leadership_office_login_form, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/leadership/login", leadership_office_login, methods=["POST"])
+    core.app.add_api_route("/leadership", leadership_office_home, methods=["GET"], response_class=HTMLResponse)
+    core.app.add_api_route("/leadership/reply", leadership_office_reply, methods=["POST"])
+    core.app.add_api_route("/leadership/logout", leadership_office_logout, methods=["GET"])
     core.app.add_api_route("/executive/leadership/{office_key}", executive_leadership_inbox, methods=["GET"], response_class=HTMLResponse)
     core.app.add_api_route("/executive/leadership/message", executive_leadership_message, methods=["POST"])
     core.app.add_api_route("/executive/vault", executive_vault_page, methods=["GET"], response_class=HTMLResponse)
