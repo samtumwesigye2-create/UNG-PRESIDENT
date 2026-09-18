@@ -109,6 +109,26 @@ def init_schema():
         )""")
 
 
+def seed_principal_accounts_from_env():
+    seeds = [
+        ("president", "president", "President", os.environ.get("UNG_EXEC_PRESIDENT_PASSWORD")),
+        ("vice.president", "vice_president", "Vice President", os.environ.get("UNG_EXEC_VICE_PRESIDENT_PASSWORD")),
+        ("prime.minister", "prime_minister", "Prime Minister", os.environ.get("UNG_EXEC_PRIME_MINISTER_PASSWORD")),
+    ]
+    with core.db_cursor(commit=True) as cur:
+        for username, role, full_name, password in seeds:
+            if not password:
+                continue
+            cur.execute("SELECT id FROM executive_principal_accounts WHERE username=?", (username,))
+            if cur.fetchone():
+                continue
+            salt = secrets.token_hex(16)
+            cur.execute(
+                "INSERT INTO executive_principal_accounts(username,password_hash,salt,role,full_name,created_at) VALUES(?,?,?,?,?,?)",
+                (username, _hash_password(password, salt), salt, role, full_name, datetime.utcnow().isoformat()),
+            )
+
+
 def _title(role: str) -> str:
     return {
         "president": "President",
@@ -265,6 +285,7 @@ def legacy_redirect():
 
 def apply_executive_suite(_core=None):
     init_schema()
+    seed_principal_accounts_from_env()
     paths={"/executive","/executive/login","/executive/logout","/executive/setup","/executive/messages","/executive/archive","/executive/meetings","/admin/executive-suite"}
     core.app.router.routes[:] = [r for r in core.app.router.routes if getattr(r,"path",None) not in paths]
     core.app.add_api_route("/executive", dashboard, methods=["GET"], response_class=HTMLResponse)
