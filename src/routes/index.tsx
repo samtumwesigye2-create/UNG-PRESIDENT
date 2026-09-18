@@ -100,9 +100,9 @@ export function PresidentHome() {
       <section className="formal-section vice-presidency-section" id="vice-presidency"><div className="container">
         <div className="section-head"><div><span className="section-kicker">Office of the Vice President</span><h2>Vice Presidential Standard & Seal</h2></div><p>Official visual identity of the Office of the Vice President.</p></div>
         <div className="symbols-identity vice-president-symbols">
-          <div className="flag-display"><img src={VICE_PRESIDENTIAL_STANDARD} alt="Vice Presidential Standard" style={{width:'100%',height:'auto',display:'block'}} /></div>
+          <div className="vp-symbol-disc"><img src={VICE_PRESIDENTIAL_STANDARD} alt="Vice Presidential Standard" /></div>
           <div><span className="section-kicker">Vice Presidential Standard</span><h3>Office of the Vice President</h3><p>The Vice Presidential Standard is presented here as part of the Presidency's official symbols collection.</p></div>
-          <div className="seal-display vice-president-seal-crop" aria-label="Vice Presidential Seal"><img src={VICE_PRESIDENTIAL_SEAL} alt="Vice Presidential Seal" style={{width:'100%',height:'100%',objectFit:'cover'}} /></div>
+          <div className="vp-symbol-disc" aria-label="Vice Presidential Seal"><img src={VICE_PRESIDENTIAL_SEAL} alt="Vice Presidential Seal" /></div>
         </div>
       </section>
 
