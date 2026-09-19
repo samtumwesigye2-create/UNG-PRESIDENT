@@ -683,6 +683,28 @@ def _title(role: str) -> str:
     }.get(role, "Principal")
 
 
+
+def _principal_visuals(role: str):
+    """Return the role-specific seal and standard/flag for the executive portal."""
+    if role == "vice_president":
+        seal = os.environ.get("VP_SEAL_JPG_B64", "")
+        flag = os.environ.get("VP_FLAG_JPG_B64", "")
+        office = "OFFICE OF THE VICE PRESIDENT"
+    elif role == "prime_minister":
+        seal = os.environ.get("PM_SEAL_JPG_B64", "")
+        flag = os.environ.get("PM_FLAG_JPG_B64", "")
+        office = "OFFICE OF THE PRIME MINISTER"
+    else:
+        seal = core.PRES_SEAL_B64
+        flag = ""
+        office = "OFFICE OF THE PRESIDENT"
+    return {
+        "seal": seal or core.PRES_SEAL_B64,
+        "flag": flag,
+        "office": office,
+    }
+
+
 def _login_page(error=""):
     err = f'<div class="err">{escape(error)}</div>' if error else ""
     page = f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -856,6 +878,10 @@ def _decrypt(value):
 
 
 def _shell(user, body):
+    visuals = _principal_visuals(user["role"])
+    office_banner = ""
+    if user["role"] in {"vice_president", "prime_minister"}:
+        office_banner = f'''<section class="office-identity"><div class="office-seal"><img src="data:image/jpeg;base64,{visuals["seal"]}" alt="{escape(_title(user["role"]))} Seal"></div><div class="office-copy"><div class="office-kicker">REPUBLIC OF UGANDA</div><h2>{escape(visuals["office"])}</h2><div class="office-sub">DIGITAL EXECUTIVE SUITE · OFFICIAL PRINCIPAL IDENTITY</div></div><div class="office-flag"><img src="data:image/jpeg;base64,{visuals["flag"]}" alt="{escape(_title(user["role"]))} Flag"></div></section>'''
     page = f"""<!doctype html><html><head><meta name="viewport" content="width=1180,initial-scale=1"><title>{escape(_title(user["role"]))} Executive Suite</title>
 <style>
 *{{box-sizing:border-box}}html,body{{margin:0;min-width:1180px;background:#07111f;color:#edf2f7;font-family:Arial,sans-serif}}body{{overflow-x:auto}}
@@ -863,10 +889,10 @@ def _shell(user, body):
 .layout{{display:grid;grid-template-columns:250px 1fr;min-height:calc(100vh - 118px)}}aside{{background:#081827;border-right:1px solid #20364d;padding:28px 20px}}aside a{{display:block;color:#dfe8f1;text-decoration:none;padding:11px 12px;border-radius:7px;margin-bottom:5px}}aside a:hover{{background:#102b47;color:#f2cf69}}
 main{{padding:26px 30px 38px;max-width:1450px}}.hero{{background:linear-gradient(120deg,#0e2d4c,#102039);border:1px solid #2a435d;border-radius:16px;padding:24px 28px;box-shadow:0 10px 28px #0005}}.hero-head{{display:flex;align-items:center;gap:18px}}.principal-seal{{width:82px;height:82px;border-radius:50%;overflow:hidden;border:2px solid #d6b354;box-shadow:0 0 0 3px #0b1d30}}.principal-seal img{{width:100%;height:100%;object-fit:cover;display:block}}.hero h2{{font:31px Georgia;margin:0 0 7px}}.gold{{color:#d6b354}}.hero p{{color:#b8c7d6;margin:0}}
 .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}}.card,.panel{{background:#0c1d2e;border:1px solid #233b53;border-radius:13px;padding:18px;box-shadow:0 5px 14px #0004}}.card h3{{color:#f0cc67;margin-top:0}}.card p{{color:#aebdcb;font-size:13px;line-height:1.45}}
-.two{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}}label{{display:block;font-size:12px;font-weight:700;margin:10px 0 5px;color:#c9d3dd}}input,textarea,select{{width:100%;background:#07131f;color:#eef3f8;border:1px solid #334a61;border-radius:7px;padding:10px}}textarea{{min-height:88px}}button{{margin-top:12px;background:#c7a247;color:#07111f;border:0;border-radius:7px;padding:10px 14px;font-weight:800}}table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}}th,td{{padding:9px;border-bottom:1px solid #24384b;text-align:left;vertical-align:top}}th{{color:#d9ba61}}.suite-planner{{background:linear-gradient(135deg,#0c1d2e,#102842);border-color:#34516d}}.suite-planner h3{{font:22px Georgia;color:#f0d37b;margin-bottom:4px}}.suite-planner .intro{{color:#9fb2c3;font-size:12px;margin:0 0 12px}}
+.two{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}}label{{display:block;font-size:12px;font-weight:700;margin:10px 0 5px;color:#c9d3dd}}input,textarea,select{{width:100%;background:#07131f;color:#eef3f8;border:1px solid #334a61;border-radius:7px;padding:10px}}textarea{{min-height:88px}}button{{margin-top:12px;background:#c7a247;color:#07111f;border:0;border-radius:7px;padding:10px 14px;font-weight:800}}table{{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}}th,td{{padding:9px;border-bottom:1px solid #24384b;text-align:left;vertical-align:top}}th{{color:#d9ba61}}.suite-planner{{background:linear-gradient(135deg,#0c1d2e,#102842);border-color:#34516d}}.suite-planner h3{{font:22px Georgia;color:#f0d37b;margin-bottom:4px}}.suite-planner .intro{{color:#9fb2c3;font-size:12px;margin:0 0 12px}}.office-identity{{display:grid;grid-template-columns:110px 1fr 260px;gap:20px;align-items:center;background:linear-gradient(120deg,#0e2d4c,#102039);border:1px solid #caa447;border-radius:16px;padding:18px 22px;margin-bottom:18px;box-shadow:0 10px 28px #0005}}.office-seal{{width:96px;height:96px;border-radius:50%;overflow:hidden;border:2px solid #d6b354;background:#fff}}.office-seal img{{width:100%;height:100%;object-fit:cover}}.office-copy h2{{font:25px Georgia;margin:5px 0;color:#f3d477}}.office-kicker,.office-sub{{font-size:11px;letter-spacing:1.8px;color:#b8c7d6}}.office-flag{{height:104px;border:1px solid #caa447;border-radius:9px;overflow:hidden;background:#071522}}.office-flag img{{width:100%;height:100%;object-fit:cover;display:block}}
 </style></head><body><div class="top"><div class="brand"><div class="brand-seal"><img src="data:image/png;base64,__PRES_SEAL__" alt="Presidential Seal"></div><div><h1>DIGITAL EXECUTIVE SUITE</h1><small>PRINCIPAL PORTAL · UNG-PRESIDENT</small></div></div><div class="who">{escape(_title(user["role"]).upper())}<br><strong>{escape(user["username"])}</strong></div></div>
-<div class="layout"><aside><a href="/executive">Executive Home</a><a href="/executive/leadership">Leadership Network</a><a href="/executive/vault">Secure Vault & SCIF</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a>{'<a href="/executive/access">Principal Access</a>' if user["role"]=="president" else ''}<a href="/executive/security">Security & Password</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{body}</main></div></body></html>"""
-    return HTMLResponse(page.replace("__PRES_SEAL__", core.PRES_SEAL_B64))
+<div class="layout"><aside><a href="/executive">Executive Home</a><a href="/executive/leadership">Leadership Network</a><a href="/executive/vault">Secure Vault & SCIF</a><a href="#comms">Secure Communications</a><a href="#archive">Executive Archive</a><a href="#meetings">Boardroom & Meetings</a>{'<a href="/executive/access">Principal Access</a>' if user["role"]=="president" else ''}<a href="/executive/security">Security & Password</a><a href="/executive/logout" style="color:#ff9b9b">Secure Logout</a></aside><main>{office_banner}{body}</main></div></body></html>"""
+    return HTMLResponse(page.replace("__PRES_SEAL__", visuals["seal"]))
 
 
 def dashboard(request: Request):
