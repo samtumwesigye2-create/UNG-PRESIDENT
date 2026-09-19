@@ -409,6 +409,23 @@ def seed_principal_accounts_from_env():
             )
 
 
+def _military_related_payload(record_type: str, name: str, payload: dict) -> bool:
+    terms = (
+        "military","defence","defense","armed forces","army","air force","navy",
+        "defence minister","defense minister","ministry of defence","ministry of defense",
+        "military intelligence","defence intelligence","defense intelligence",
+        "brigade","battalion","regiment","barracks","command post","joint staff","ghq"
+    )
+    def has(value):
+        if isinstance(value, dict):
+            return any(has(k) or has(v) for k, v in value.items())
+        if isinstance(value, (list, tuple, set)):
+            return any(has(v) for v in value)
+        text = str(value or "").lower()
+        return any(term in text for term in terms)
+    return has(record_type) or has(name) or has(payload)
+
+
 def _store_executive_record_in_vault(*, user, record_type: str, name: str, payload: dict,
                                      classification: str = "confidential",
                                      protection_profile: str = "VAULT-ENVELOPE",
@@ -421,7 +438,7 @@ def _store_executive_record_in_vault(*, user, record_type: str, name: str, paylo
         "principal": user["username"],
         "classification": classification,
         "protection_profile": protection_profile,
-        "military_related": bool(military_related),
+        "military_related": bool(military_related or _military_related_payload(record_type, name, payload)),
         "payload": payload,
     }
     raw = json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
