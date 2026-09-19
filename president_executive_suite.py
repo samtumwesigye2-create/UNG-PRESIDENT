@@ -411,7 +411,8 @@ def seed_principal_accounts_from_env():
 
 def _store_executive_record_in_vault(*, user, record_type: str, name: str, payload: dict,
                                      classification: str = "confidential",
-                                     protection_profile: str = "VAULT-ENVELOPE") -> str:
+                                     protection_profile: str = "VAULT-ENVELOPE",
+                                     military_related: bool = False) -> str:
     if not VAULT_INGEST_SECRET:
         raise HTTPException(status_code=503, detail="Secure VAULT record storage is not configured")
     body = {
@@ -420,6 +421,7 @@ def _store_executive_record_in_vault(*, user, record_type: str, name: str, paylo
         "principal": user["username"],
         "classification": classification,
         "protection_profile": protection_profile,
+        "military_related": bool(military_related),
         "payload": payload,
     }
     raw = json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -1345,8 +1347,9 @@ async def leadership_office_reply(request: Request):
         user=user,
         record_type="leadership_office_reply",
         name=f"{target['title'] if target else user['office_key']} Reply — {subject}",
-        classification="confidential",
-        protection_profile="VAULT-ENVELOPE",
+        classification="restricted" if user["office_key"] == "defence_minister" else "confidential",
+        protection_profile="VAULT-MIL" if user["office_key"] == "defence_minister" else "VAULT-ENVELOPE",
+        military_related=user["office_key"] == "defence_minister",
         payload={
             "office_key":user["office_key"],
             "office_title":target["title"] if target else user["office_key"],
@@ -1447,8 +1450,9 @@ async def executive_leadership_message(request: Request):
         user=user,
         record_type="executive_leadership_message",
         name=f"Leadership Communication — {target['title']} — {subject}",
-        classification="confidential",
-        protection_profile="VAULT-ENVELOPE",
+        classification="restricted" if target["key"] == "defence_minister" else "confidential",
+        protection_profile="VAULT-MIL" if target["key"] == "defence_minister" else "VAULT-ENVELOPE",
+        military_related=target["key"] == "defence_minister",
         payload={
             "recipient_key": target["key"],
             "recipient_title": target["title"],
