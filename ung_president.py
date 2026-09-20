@@ -508,7 +508,7 @@ INDEX = """
     <h4>PRESIDENTIAL STANDARD</h4><p>Republic of Uganda</p>
   </div>
   <div class="badge-item">
-    <div class="badge-circle"><img src="/static/images/vice-presidential-standard.jpg" alt="Vice Presidential Standard of the Republic of Uganda"></div>
+    <div class="badge-circle"><img src="data:image/png;base64,{{ vp_seal_b64 }}" alt="Vice Presidential Standard of the Republic of Uganda"></div>
     <h4>VICE PRESIDENTIAL STANDARD</h4><p>Republic of Uganda</p>
   </div>
 </div>
