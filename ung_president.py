@@ -9,6 +9,7 @@ A one-time administrator enrollment code prints on first run.
 """
 import os
 import re
+from urllib.parse import urlparse
 import time
 import hmac
 import base64
@@ -19,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from jinja2 import Environment, DictLoader
 from markupsafe import Markup
 # =================================================================
@@ -256,6 +257,18 @@ def verify_session_token(token: str):
         return {"user_id": int(user_id), "username": username, "role": role}
     except Exception:
         return None
+def validated_text(value: str, field: str, max_length: int, *, required: bool = True) -> str:
+    value = (value or "").strip()
+    if required and not value:
+        raise HTTPException(status_code=422, detail=f"{field} is required.")
+    if len(value) > max_length:
+        raise HTTPException(status_code=422, detail=f"{field} is too long.")
+    return value
+def validated_email(value: str) -> str:
+    value = validated_text(value, "Email", 254)
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+        raise HTTPException(status_code=422, detail="Enter a valid email address.")
+    return value
 _rate_buckets: dict = {}
 def is_rate_limited(key: str, max_requests: int, window_seconds: int) -> bool:
     now = time.time()
@@ -882,9 +895,41 @@ def render_admin(page_title, inner_template, **ctx):
 app = FastAPI(title="UNG-PRESIDENT")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+PRIVATE_PATH_PREFIXES = ("/admin", "/executive", "/nsc", "/un-affairs")
+
+def _host_of(url: str) -> str:
+    return urlparse(url.strip()).netloc.lower() if url and url.strip() else ""
+
+def trusted_origin_hosts(request: Request) -> set:
+    hosts = {request.headers.get("host", "").lower(), request.headers.get("x-forwarded-host", "").lower()}
+    hosts.add(_host_of(os.environ.get("UNG_PRESIDENT_PUBLIC_URL", "")))
+    hosts.update(_host_of(item) for item in os.environ.get("UNG_PRESIDENT_TRUSTED_ORIGINS", "").split(","))
+    return {h for h in hosts if h}
+
+def is_same_site_request(request: Request) -> bool:
+    """Reject state-changing requests that a browser marks as coming from another site.
+
+    Requests without an Origin header (non-browser clients, older browsers) are
+    allowed; the session cookie is already SameSite=Strict.
+    """
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    parsed = urlparse(origin)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    return parsed.netloc.lower() in trusted_origin_hosts(request)
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    if request.method not in SAFE_METHODS and not is_same_site_request(request):
+        return JSONResponse({"detail": "Cross-site request rejected."}, status_code=403)
     response = await call_next(request)
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
+    if request.url.path.startswith(PRIVATE_PATH_PREFIXES):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
@@ -893,8 +938,22 @@ async def security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response
 def get_current_user(request: Request):
+    """Return the signed-in user, re-checked against the users table on every request.
+
+    A valid cookie alone is not enough: a deleted, renamed or locked account loses
+    access immediately, and the role always comes from the database, so a demotion
+    takes effect without waiting for the session to expire.
+    """
     token = request.cookies.get("session")
-    return verify_session_token(token) if token else None
+    session = verify_session_token(token) if token else None
+    if not session:
+        return None
+    with db_cursor() as cur:
+        cur.execute("SELECT id, username, role, locked_until FROM users WHERE id=?", (session["user_id"],))
+        user = cur.fetchone()
+    if not user or user["username"] != session["username"] or is_locked(user["locked_until"]):
+        return None
+    return {"user_id": user["id"], "username": user["username"], "role": user["role"]}
 def require_role(user, *allowed_roles):
     if not user or user["role"] not in allowed_roles:
         raise HTTPException(status_code=403, detail="Not authorized for this section.")
@@ -972,6 +1031,14 @@ def submit_visit(
 ):
     if is_rate_limited(f"visit:{client_ip(request)}", 5, 3600):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+    requester_name = validated_text(requester_name, "Full name", 120)
+    email = validated_email(email)
+    phone = validated_text(phone, "Phone", 40, required=False)
+    organization = validated_text(organization, "Organization", 200, required=False)
+    purpose = validated_text(purpose, "Purpose", 2000)
+    requested_date = validated_text(requested_date, "Requested date", 10)
+    if not 1 <= party_size <= 100:
+        raise HTTPException(status_code=422, detail="Party size must be between 1 and 100.")
     with db_cursor(commit=True) as cur:
         cur.execute(
             "INSERT INTO visit_requests (requester_name, email, phone, organization, purpose, requested_date, party_size) "
@@ -987,6 +1054,10 @@ def petition_form(submitted: bool = False):
 def submit_petition(request: Request, petitioner_name: str = Form(...), email: str = Form(...), subject: str = Form(...), message: str = Form(...)):
     if is_rate_limited(f"petition:{client_ip(request)}", 5, 3600):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+    petitioner_name = validated_text(petitioner_name, "Full name", 120)
+    email = validated_email(email)
+    subject = validated_text(subject, "Subject", 200)
+    message = validated_text(message, "Message", 5000)
     with db_cursor(commit=True) as cur:
         cur.execute(
             "INSERT INTO petitions (petitioner_name, email, subject, message) VALUES (?, ?, ?, ?)",

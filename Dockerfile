@@ -13,5 +13,6 @@ COPY president_executive_suite.py .
 COPY desktop_admin_fix.py .
 COPY static ./static
 COPY bootstrap.py .
+COPY president_backup.py .
 EXPOSE 8000
 CMD ["python", "bootstrap.py"]
