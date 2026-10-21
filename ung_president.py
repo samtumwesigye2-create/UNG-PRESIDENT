@@ -1,6 +1,6 @@
 """
 UNG-PRESIDENT — Office of the President system
-Single-file build: FastAPI + PostgreSQL/SQLite, all templates/CSS embedded as strings.
+Single-file build: FastAPI + SQLite, all templates/CSS embedded as strings.
 Run:
     pip install fastapi uvicorn jinja2 python-multipart --break-system-packages
     python ung_president.py
@@ -9,24 +9,24 @@ A one-time administrator enrollment code prints on first run.
 """
 import os
 import re
+from urllib.parse import urlparse
 import time
 import hmac
 import base64
 import hashlib
 import secrets
 import sqlite3
-from urllib.parse import urlparse
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, Form, HTTPException
-
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from jinja2 import Environment, DictLoader
 from markupsafe import Markup
 # =================================================================
 # CONFIG
 # =================================================================
 DB_PATH = os.environ.get("UNG_PRESIDENT_DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ung_president.db"))
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
 SECRET_KEY = os.environ.get("UNG_PRESIDENT_SECRET")
 if not SECRET_KEY:
     if os.environ.get("RAILWAY_ENVIRONMENT_ID"):
@@ -58,58 +58,21 @@ NAT_FLAG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAVQAAAFUCAMAAABMTDSHAAADAFBMVEXw1WKsXF3n
 # DATABASE
 # =================================================================
 def get_connection():
-    if database_backend() == "postgresql":
-        import psycopg
-        from psycopg.rows import dict_row
-        return psycopg.connect(DATABASE_URL, row_factory=dict_row)
     os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
-
-def database_backend():
-    """Return the configured database family without exposing credentials."""
-    scheme = urlparse(DATABASE_URL).scheme.lower()
-    return "postgresql" if scheme in {"postgres", "postgresql"} else "sqlite"
-
-def validate_production_config():
-    if os.environ.get("RAILWAY_ENVIRONMENT_ID") and database_backend() != "postgresql":
-        raise RuntimeError("Production requires a PostgreSQL DATABASE_URL.")
 @contextmanager
 def db_cursor(commit=False):
     conn = get_connection()
     try:
-        cur = DatabaseCursor(conn.cursor(), database_backend())
+        cur = conn.cursor()
         yield cur
         if commit:
             conn.commit()
     finally:
         conn.close()
-
-class DatabaseCursor:
-    """Compatibility layer for parameterized SQLite and PostgreSQL queries."""
-    def __init__(self, cursor, backend):
-        self._cursor = cursor
-        self._backend = backend
-
-    def execute(self, sql, params=()):
-        if self._backend == "postgresql":
-            sql = sql.replace("?", "%s")
-        return self._cursor.execute(sql, params)
-
-    def executescript(self, script):
-        if self._backend == "sqlite":
-            return self._cursor.executescript(script)
-        for statement in script.split(";"):
-            if statement.strip():
-                self._cursor.execute(statement)
-
-    def fetchone(self):
-        return self._cursor.fetchone()
-
-    def fetchall(self):
-        return self._cursor.fetchall()
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -250,12 +213,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 """
 def init_db():
-    schema = SCHEMA
-    if database_backend() == "postgresql":
-        schema = schema.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
-        schema = schema.replace("DEFAULT (datetime('now'))", "DEFAULT CURRENT_TIMESTAMP")
     with db_cursor(commit=True) as cur:
-        cur.executescript(schema)
+        cur.executescript(SCHEMA)
 def log_action(user_id, username, action, entity=None, entity_id=None, detail=None, ip_address=None):
     with db_cursor(commit=True) as cur:
         cur.execute(
@@ -298,6 +257,18 @@ def verify_session_token(token: str):
         return {"user_id": int(user_id), "username": username, "role": role}
     except Exception:
         return None
+def validated_text(value: str, field: str, max_length: int, *, required: bool = True) -> str:
+    value = (value or "").strip()
+    if required and not value:
+        raise HTTPException(status_code=422, detail=f"{field} is required.")
+    if len(value) > max_length:
+        raise HTTPException(status_code=422, detail=f"{field} is too long.")
+    return value
+def validated_email(value: str) -> str:
+    value = validated_text(value, "Email", 254)
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+        raise HTTPException(status_code=422, detail="Enter a valid email address.")
+    return value
 _rate_buckets: dict = {}
 def is_rate_limited(key: str, max_requests: int, window_seconds: int) -> bool:
     now = time.time()
@@ -924,57 +895,63 @@ def render_admin(page_title, inner_template, **ctx):
 app = FastAPI(title="UNG-PRESIDENT")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+PRIVATE_PATH_PREFIXES = ("/admin", "/executive", "/nsc", "/un-affairs")
+
+def _host_of(url: str) -> str:
+    return urlparse(url.strip()).netloc.lower() if url and url.strip() else ""
+
+def trusted_origin_hosts(request: Request) -> set:
+    hosts = {request.headers.get("host", "").lower(), request.headers.get("x-forwarded-host", "").lower()}
+    hosts.add(_host_of(os.environ.get("UNG_PRESIDENT_PUBLIC_URL", "")))
+    hosts.update(_host_of(item) for item in os.environ.get("UNG_PRESIDENT_TRUSTED_ORIGINS", "").split(","))
+    return {h for h in hosts if h}
+
+def is_same_site_request(request: Request) -> bool:
+    """Reject state-changing requests that a browser marks as coming from another site.
+
+    Requests without an Origin header (non-browser clients, older browsers) are
+    allowed; the session cookie is already SameSite=Strict.
+    """
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    parsed = urlparse(origin)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    return parsed.netloc.lower() in trusted_origin_hosts(request)
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    if request.method not in {"GET", "HEAD", "OPTIONS"}:
-        origin = request.headers.get("origin")
-        if origin:
-            parsed = urlparse(origin)
-            origin_host = parsed.netloc.lower()
-            request_host = request.headers.get("host", "").lower()
-            trusted = {
-                urlparse(item.strip()).netloc.lower()
-                for item in os.environ.get("UNG_PRESIDENT_TRUSTED_ORIGINS", "").split(",")
-                if item.strip()
-            }
-            if parsed.scheme not in {"http", "https"} or origin_host not in ({request_host} | trusted):
-                return JSONResponse({"detail": "Cross-site request rejected."}, status_code=403)
+    if request.method not in SAFE_METHODS and not is_same_site_request(request):
+        return JSONResponse({"detail": "Cross-site request rejected."}, status_code=403)
     response = await call_next(request)
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
+    if request.url.path.startswith(PRIVATE_PATH_PREFIXES):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'"
-    if os.environ.get("RAILWAY_ENVIRONMENT_ID") or os.environ.get("UNG_PRESIDENT_HSTS") == "1":
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-    if request.url.path.startswith("/admin"):
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        response.headers["Pragma"] = "no-cache"
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response
-
-def validated_text(value: str, field: str, max_length: int, *, required: bool = True) -> str:
-    value = value.strip()
-    if required and not value:
-        raise HTTPException(status_code=422, detail=f"{field} is required.")
-    if len(value) > max_length:
-        raise HTTPException(status_code=422, detail=f"{field} is too long.")
-    return value
-
-def validated_email(value: str) -> str:
-    value = validated_text(value, "Email", 254)
-    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
-        raise HTTPException(status_code=422, detail="Enter a valid email address.")
-    return value
 def get_current_user(request: Request):
+    """Return the signed-in user, re-checked against the users table on every request.
+
+    A valid cookie alone is not enough: a deleted, renamed or locked account loses
+    access immediately, and the role always comes from the database, so a demotion
+    takes effect without waiting for the session to expire.
+    """
     token = request.cookies.get("session")
     session = verify_session_token(token) if token else None
     if not session:
         return None
     with db_cursor() as cur:
-        cur.execute("SELECT id, username, role FROM users WHERE id=?", (session["user_id"],))
+        cur.execute("SELECT id, username, role, locked_until FROM users WHERE id=?", (session["user_id"],))
         user = cur.fetchone()
-    if not user or user["username"] != session["username"]:
+    if not user or user["username"] != session["username"] or is_locked(user["locked_until"]):
         return None
     return {"user_id": user["id"], "username": user["username"], "role": user["role"]}
 def require_role(user, *allowed_roles):
@@ -989,7 +966,6 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 @app.on_event("startup")
 def startup():
-    validate_production_config()
     init_db()
     with db_cursor() as cur:
         cur.execute("SELECT COUNT(*) AS c FROM users")
@@ -1003,23 +979,19 @@ def startup():
         # register through the normal HR-verified flow. In production, HR
         # would generate this the same way from an internal tool — insert a
         # row into hr_codes with hash_hr_code(code).
-        bootstrap_code = os.environ.get("UNG_PRESIDENT_BOOTSTRAP_CODE")
-        if os.environ.get("RAILWAY_ENVIRONMENT_ID") and not bootstrap_code:
-            raise RuntimeError("Set UNG_PRESIDENT_BOOTSTRAP_CODE for initial production administrator enrollment.")
-        bootstrap_code = bootstrap_code or "-".join([secrets.token_hex(2).upper() for _ in range(3)])
+        bootstrap_code = "-".join([secrets.token_hex(2).upper() for _ in range(3)])
         with db_cursor(commit=True) as cur:
             cur.execute(
                 "INSERT INTO hr_codes (code_hash, role, note) VALUES (?, ?, ?)",
                 (hash_hr_code(bootstrap_code), "admin", "Bootstrap code — first-run setup"),
             )
-        if not os.environ.get("RAILWAY_ENVIRONMENT_ID"):
-            print("=" * 60)
-            print("UNG-PRESIDENT — first-run bootstrap HR verification code")
-            print(f"  code: {bootstrap_code}")
-            print("  role: admin")
-            print("  Go to /admin/register and use this code to create the")
-            print("  first administrator account. This code works once.")
-            print("=" * 60)
+        print("=" * 60)
+        print("UNG-PRESIDENT — first-run bootstrap HR verification code")
+        print(f"  code: {bootstrap_code}")
+        print("  role: admin")
+        print("  Go to /admin/register and use this code to create the")
+        print("  first administrator account. This code works once.")
+        print("=" * 60)
 @app.get("/health")
 def health():
     with db_cursor() as cur:
@@ -1032,7 +1004,7 @@ def home():
     with db_cursor() as cur:
         cur.execute("SELECT * FROM press_statements WHERE is_public=1 ORDER BY published_at DESC LIMIT 5")
         press = cur.fetchall()
-        cur.execute("SELECT * FROM events WHERE is_public=1 AND event_date >= CAST(CURRENT_DATE AS TEXT) ORDER BY event_date ASC LIMIT 5")
+        cur.execute("SELECT * FROM events WHERE is_public=1 AND event_date >= date('now') ORDER BY event_date ASC LIMIT 5")
         events = cur.fetchall()
         cur.execute("SELECT * FROM executive_orders WHERE is_public=1 AND status='signed' ORDER BY signed_date DESC LIMIT 5")
         orders = cur.fetchall()
@@ -1065,10 +1037,6 @@ def submit_visit(
     organization = validated_text(organization, "Organization", 200, required=False)
     purpose = validated_text(purpose, "Purpose", 2000)
     requested_date = validated_text(requested_date, "Requested date", 10)
-    try:
-        datetime.strptime(requested_date, "%Y-%m-%d")
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Requested date must use YYYY-MM-DD.")
     if not 1 <= party_size <= 100:
         raise HTTPException(status_code=422, detail="Party size must be between 1 and 100.")
     with db_cursor(commit=True) as cur:
@@ -1197,8 +1165,7 @@ def register_details_submit(
             "INSERT INTO users (username, password_hash, salt, role, full_name) VALUES (?, ?, ?, ?, ?)",
             (username, pw_hash, salt, reg["role"], full_name),
         )
-        cur.execute("SELECT id FROM users WHERE username=?", (username,))
-        user_id = cur.fetchone()["id"]
+        user_id = cur.lastrowid
         cur.execute(
             "INSERT INTO staff_profiles (user_id, national_id, official_phone, personal_email, department, "
             "appointment_date, supervisor_name, role_detail, hr_code_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
