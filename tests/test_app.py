@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 def client(tmp_path):
     app.DB_PATH = str(tmp_path / 'test.db')
     app._rate_buckets.clear()
+    import registration_response_fix
+    registration_response_fix.apply_registration_response_fix()
     with contextlib.redirect_stdout(io.StringIO()):
         with TestClient(app.app) as c:
             yield c
@@ -55,6 +57,20 @@ def test_hr_registration_consumes_code(client):
         assert cur.fetchone()['password_hash'] != data['password']
     r = client.post('/admin/register/details', data=data, follow_redirects=False)
     assert 'already' in r.headers['location']
+
+
+def test_registration_validation_error_returns_html(client):
+    with app.db_cursor(commit=True) as cur:
+        cur.execute('INSERT INTO hr_codes(code_hash,role) VALUES(?,?)', (app.hash_hr_code('HTML-TEST'), 'staff'))
+    r = client.post('/admin/register', data={'code':'HTML-TEST'}, follow_redirects=False)
+    from urllib.parse import urlparse, parse_qs
+    token = parse_qs(urlparse(r.headers['location']).query)['token'][0]
+    data = dict(token=token, full_name='Test User', national_id='TEST124', official_phone='123', personal_email='test2@example.com', department='Office', appointment_date='2026-09-14', supervisor_name='Supervisor', role_detail='Staff', username='newstaff2', password='Strong-password-123', confirm_password='Different-password-123')
+    response = client.post('/admin/register/details', data=data)
+    assert response.status_code == 200
+    assert response.headers['content-type'].startswith('text/html')
+    assert 'Passwords do not match.' in response.text
+    assert '<!DOCTYPE html>' in response.text
 
 
 def test_tampered_session_rejected():

@@ -21,3 +21,26 @@ Role checks gate privileged writes; only the president signs orders. Signed sess
 ## Validation
 
 Install `requirements-dev.txt`, then run `python -m pytest tests -q`. Tests cover public pages, unauthorized access, password policy, login cookies, restricted signing/audit access, one-use enrollment, password hashing, token tampering and HTML escaping. Registration's missing password-policy helper and template escaping have been corrected from the PDF source.
+
+
+## UNG-VAULT / Digital SCIF integration
+
+The Digital Executive Suite now includes a principal-only **Secure Vault & SCIF** area.
+
+- UNG-PRESIDENT is the executive-facing launch surface.
+- UNG-VAULT remains a separate security boundary and continues to own cryptography, protected-object storage, classification enforcement, Digital SCIF sessions, audit records, and SENTINEL security-event forwarding.
+- The Executive Suite checks VAULT service health and exposes executive shortcuts for protected documents, Digital SCIF, encrypted file exchange, redacted sharing, emergency revocation, and security activity.
+- Configure the backend location with `UNG_VAULT_BASE_URL`.
+- UNG-PRESIDENT does not store VAULT master keys or SCIF plaintext.
+
+
+## Executive record storage policy
+
+The Digital Executive Suite now treats UNG-VAULT as the authoritative encrypted store for newly created executive operational records.
+
+- Secure communications, executive archive entries and boardroom/private-suite meeting records are serialized and sent to UNG-VAULT over an HMAC-SHA256 signed service-to-service channel.
+- VAULT encrypts the complete record before persistence and returns a protected object ID.
+- UNG-PRESIDENT stores only local display/index metadata plus the VAULT object reference; message bodies and protected notes are no longer retained as local plaintext or local application ciphertext for new records.
+- Record creation is fail closed: if VAULT is unavailable or rejects the signed request, the Executive Suite does not create the local record.
+- Existing legacy records remain readable under their previous storage model until separately migrated.
+- Authentication/session state and password/MFA material remain operational identity state, not executive document records, and are not copied into VAULT as record payloads.
