@@ -4,19 +4,49 @@ import { v } from 'convex/values'
 export const homepage = query({
   args: {},
   returns: v.object({
-    executiveOrders: v.array(v.any()), press: v.array(v.any()), events: v.array(v.any()), milestones: v.array(v.any()), legislation: v.array(v.any()), gallery: v.array(v.any()), youthPrograms: v.array(v.any()), executiveOffices:v.array(v.any()), executiveDepartments:v.array(v.any()),
+    executiveOrders: v.array(v.any()), press: v.array(v.any()), events: v.array(v.any()), milestones: v.array(v.any()), legislation: v.array(v.any()), gallery: v.array(v.any()), youthPrograms: v.array(v.any()), executiveOffices:v.array(v.any()), executiveDepartments:v.array(v.any()), officialDocuments:v.array(v.any()),
   }),
   handler: async (ctx) => ({
     executiveOrders: await ctx.db.query('executiveOrders').withIndex('by_status', q => q.eq('status','issued')).order('desc').take(20),
     press: await ctx.db.query('pressStatements').withIndex('by_status', q => q.eq('status','released')).order('desc').take(20),
-    events: await ctx.db.query('stateFunctions').withIndex('by_public_status', q => q.eq('isPublic', true).eq('status','scheduled')).order('asc').take(20),
+    events: await ctx.db.query('stateFunctions').withIndex('by_public_status', q => q.eq('isPublic', true).eq('status','scheduled')).order('asc').take(50),
     milestones: await ctx.db.query('milestones').withIndex('by_status', q => q.eq('status','active')).order('desc').take(30),
     legislation: await ctx.db.query('legislation').order('desc').take(30),
     gallery: await ctx.db.query('galleryItems').withIndex('by_status', q => q.eq('status','active')).order('desc').take(24),
     youthPrograms: await ctx.db.query('youthPrograms').withIndex('by_status', q => q.eq('status','open')).order('desc').take(30),
     executiveOffices: await ctx.db.query('executiveOffices').withIndex('by_status', q => q.eq('status','published')).order('desc').take(10),
     executiveDepartments: await ctx.db.query('executiveDepartments').withIndex('by_status', q => q.eq('status','published')).order('desc').take(100),
+    officialDocuments: await ctx.db.query('officialDocuments').withIndex('by_status', q => q.eq('status','published')).order('desc').take(100),
   }),
+})
+
+export const verifyOfficialDocument = query({
+  args:{reference:v.string()},
+  handler:async(ctx,{reference})=>{
+    const normalized=reference.trim()
+    if(!normalized) return {ok:false as const,code:'NOT_FOUND',message:'Official document not found.'}
+    const document=await ctx.db.query('officialDocuments').withIndex('by_reference',q=>q.eq('reference',normalized)).unique()
+    if(!document || (document.status!=='published' && document.status!=='archived')) return {ok:false as const,code:'NOT_FOUND',message:'No published official record matches this reference.'}
+    return {ok:true as const,document:{
+      title:document.title,
+      documentType:document.documentType,
+      summary:document.summary,
+      body:document.body,
+      topic:document.topic,
+      issuingOffice:document.issuingOffice,
+      issuedBy:document.issuedBy,
+      reference:document.reference,
+      version:document.version,
+      effectiveDate:document.effectiveDate,
+      publicationDate:document.publicationDate,
+      year:document.year,
+      sourceUrl:document.sourceUrl,
+      status:document.status,
+      publishedAt:document.publishedAt,
+      archivedAt:document.archivedAt,
+      updatedAt:document.updatedAt,
+    }}
+  },
 })
 
 export const submitContact = mutation({

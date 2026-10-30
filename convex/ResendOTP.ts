@@ -16,7 +16,9 @@ export const ResendOTP = Email({
   async sendVerificationRequest({ identifier: email, token }) {
     const response = await fetch(`${process.env.OTP_ENDPOINT}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         email,
         token,
@@ -25,6 +27,7 @@ export const ResendOTP = Email({
         secretKey: process.env.SECRET_KEY,
       }),
     });
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || "Failed to send verification email");

@@ -8,11 +8,9 @@ import { PublicServiceUX } from '../components/public-service-ux'
 
 export const Route = createFileRoute('/')({ component: PresidentHome })
 
-const PRESIDENTIAL_STANDARD = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cMhdH8PnCuRMUuhn-17ua.png'
-const PRESIDENTIAL_SEAL = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cMhdH8PnCuRMUuhn-17ua.png'
+const PRESIDENTIAL_STANDARD = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/Jnx64ScGyL0isi1QEz9Zu.jpeg'
+const PRESIDENTIAL_SEAL = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/Jnx64ScGyL0isi1QEz9Zu.jpeg'
 const HERO_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/0GNEy1EzABEvWsyoKN8b2.jpeg'
-const VICE_PRESIDENTIAL_STANDARD = '/static/images/7B98271E-513C-406F-912D-A9C0B37D1A91.png'
-const VICE_PRESIDENTIAL_SEAL = '/static/images/IMG_2917.jpeg'
 const CEREMONIAL_PHOTO = 'https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=85,anim=false/w5xb3too087c17afd6dv9mov/es9cbxmoiix2ab2r0cemhfzx/cX1jvSh2aF8KtsBomeaSg.jpeg'
 
 export function PresidentHome() {
@@ -54,7 +52,7 @@ export function PresidentHome() {
       <div className="flag-ribbon" aria-hidden="true"><span/><span/><span/></div>
       <div className="container masthead-inner">
         <div className="identity-lockup">
-          <div className="seal-frame"><span className="identity-crop identity-crop-president"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal" /></span></div>
+          <div className="seal-frame"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal" /></div>
           <div><div className="country-line">Republic of Uganda</div><div className="office-line">Office of the President</div></div>
         </div>
         <div className="masthead-meta"><span>State House</span><span>Official Public Portal</span></div>
@@ -78,7 +76,7 @@ export function PresidentHome() {
           </div>
           <aside className="standard-panel">
             <div className="standard-rule">Presidential Standard</div>
-            <span className="identity-crop identity-standard-crop" data-asset="three-symbol-presidential-standard"><img src={PRESIDENTIAL_STANDARD} alt="Presidential Standard" /></span>
+            <img src={PRESIDENTIAL_STANDARD} alt="Presidential Standard" />
             <p>Symbol of the Office of the President and the authority of the Presidency.</p>
           </aside>
         </div>
@@ -96,15 +94,6 @@ export function PresidentHome() {
         <div><h2>The Presidency at a glance</h2><p className="lead">This portal organizes the public work of the Presidency by constitutional action, national policy, public communication and State House engagement.</p></div>
         <img src={CEREMONIAL_PHOTO} alt="Presidential ceremonial imagery" className="ceremonial-image" />
       </div></section>
-
-      <section className="formal-section vice-presidency-section" id="vice-presidency"><div className="container">
-        <div className="section-head"><div><span className="section-kicker">Office of the Vice President</span><h2>Vice Presidential Standard & Seal</h2></div><p>Official visual identity of the Office of the Vice President.</p></div>
-        <div className="symbols-identity vice-president-symbols">
-          <div className="vp-symbol-disc"><img src={VICE_PRESIDENTIAL_STANDARD} alt="Vice Presidential Standard" /></div>
-          <div><span className="section-kicker">Vice Presidential Standard</span><h3>Office of the Vice President</h3><p>The Vice Presidential Standard is presented here as part of the Presidency's official symbols collection.</p></div>
-          <div className="vp-symbol-disc" aria-label="Vice Presidential Seal"><img src={VICE_PRESIDENTIAL_SEAL} alt="Vice Presidential Seal" /></div>
-        </div>
-      </section>
 
       <ExecutiveGovernmentDirectory offices={data?.executiveOffices} departments={data?.executiveDepartments} />
 
@@ -130,9 +119,9 @@ export function PresidentHome() {
       </div></section>
 
       <section className="symbols-section"><div className="container symbols-identity">
-        <div className="seal-display"><span className="identity-crop identity-crop-president"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal and national arms" /></span></div>
+        <div className="seal-display"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal and national arms" /></div>
         <div><span className="section-kicker">Symbols of Office</span><h2>The seal and Presidential Standard</h2><p>Presidential symbols are displayed with restraint and ceremony, reinforcing the visual identity of the Office across the public portal.</p></div>
-        <div className="flag-display"><span className="identity-crop identity-standard-crop" data-asset="three-symbol-presidential-standard"><img src={PRESIDENTIAL_STANDARD} alt="Presidential Standard ceremonial flag" /></span></div>
+        <div className="flag-display"><img src={PRESIDENTIAL_STANDARD} alt="Presidential Standard ceremonial flag" /></div>
       </div></section>
 
       <PublicServiceUX notice={(((data as any)?.emergencyNotice) ?? null) as any} onSubscribe={(input:any)=>subscribePreferences(input)} />
@@ -148,7 +137,7 @@ export function PresidentHome() {
     </main>
 
     <footer className="presidential-footer"><div className="container footer-main">
-      <div className="footer-identity"><div className="seal-frame small"><span className="identity-crop identity-crop-president"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal footer" /></span></div><div><span>Republic of Uganda</span><strong>Office of the President</strong></div></div>
+      <div className="footer-identity"><div className="seal-frame small"><img src={PRESIDENTIAL_SEAL} alt="Presidential seal footer" /></div><div><span>Republic of Uganda</span><strong>Office of the President</strong></div></div>
       <div><h4>The Presidency</h4><a href="#records">Presidential Records</a><a href="#priorities">National Priorities</a><a href="#news">Newsroom</a></div>
       <div><h4>Public Service</h4><a href="#engage">Contact the Office</a><a href="#visit">State House Visits</a><a href="/admin">Staff Portal</a></div>
       <div><h4>Official Contacts</h4><p>Verified phone, email and social-media details will appear here once supplied and approved.</p></div>
